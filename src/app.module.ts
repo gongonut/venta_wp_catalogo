@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { ProductosModule } from './productos/productos.module';
@@ -29,8 +27,8 @@ import { BotsModule } from './bots/bots.module';
     PedidosModule,
     BotsModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}
 
