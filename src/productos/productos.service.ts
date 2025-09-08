@@ -6,10 +6,32 @@ import * as xlsx from 'xlsx';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { ProductoImportDto } from './dto/producto-import.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ProductosService {
-  constructor(@InjectModel(Producto.name) private productoModel: Model<ProductoDocument>) {}
+  constructor(
+    @InjectModel(Producto.name) private productoModel: Model<ProductoDocument>,
+    private configService: ConfigService,
+  ) {}
+
+  async createWithImages(productoDto: any, files: Array<Express.Multer.File>): Promise<Producto> {
+    // Los archivos ya fueron guardados por Multer. Solo necesitamos sus rutas.
+    const imagePaths = files.map(file => `/uploads/productos/${file.filename}`);
+
+    const newProducto = new this.productoModel({
+      ...productoDto,
+      fotos: imagePaths,
+    });
+
+    return newProducto.save();
+  }
+
+  registerUploadedAssets(files: Array<Express.Multer.File>) {
+    const baseUrl = this.configService.get<string>('API_URL') || 'http://localhost:3000';
+    const urls = files.map(file => `${baseUrl}/uploads/productos/${file.filename}`);
+    return { urls };
+  }
 
   async importProducts(fileBuffer: Buffer, empresaId: string, fileType: 'excel' | 'json') {
     let productsData: any[];
@@ -52,13 +74,18 @@ export class ProductosService {
       });
     }
 
-    const bulkOps = validProducts.map(product => ({
-      updateOne: {
-        filter: { empresaId, sku: product.sku },
-        update: { $set: { ...product, empresaId } },
-        upsert: true,
-      },
-    }));
+    const bulkOps = validProducts.map(productDto => {
+      const { foto1, foto2, foto3, foto4, foto5, ...productData } = productDto;
+      const fotos = [foto1, foto2, foto3, foto4, foto5].filter(Boolean);
+
+      return {
+        updateOne: {
+          filter: { empresaId, sku: productData.sku },
+          update: { $set: { ...productData, empresaId, fotos } },
+          upsert: true,
+        },
+      };
+    });
 
     const result = await this.productoModel.bulkWrite(bulkOps);
 
@@ -79,4 +106,3 @@ export class ProductosService {
 
   // TODO: Add methods for create, update, delete
 }
-

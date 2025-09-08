@@ -13,6 +13,10 @@ export class ProductoImportDto {
   @IsOptional()
   nombreLargo?: string;
 
+  @IsString()
+  @IsOptional()
+  categoria?: string;
+
   @IsNumber()
   @Min(0)
   @IsOptional()
@@ -27,4 +31,24 @@ export class ProductoImportDto {
   @Min(0)
   @IsNotEmpty()
   precioVenta: number;
+
+  @IsString()
+  @IsOptional()
+  foto1?: string;
+
+  @IsString()
+  @IsOptional()
+  foto2?: string;
+
+  @IsString()
+  @IsOptional()
+  foto3?: string;
+
+  @IsString()
+  @IsOptional()
+  foto4?: string;
+
+  @IsString()
+  @IsOptional()
+  foto5?: string;
 }

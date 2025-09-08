@@ -19,6 +19,9 @@ export class Producto {
   @Prop()
   nombreLargo: string;
 
+  @Prop({ index: true })
+  categoria: string;
+
   @Prop({ default: 0 })
   existencia: number;
 
