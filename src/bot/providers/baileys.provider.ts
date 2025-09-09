@@ -5,9 +5,8 @@ import makeWASocket, {
   useMultiFileAuthState,
   WAMessage,
 } from '@whiskeysockets/baileys';
-import * as qrcode from 'qrcode-terminal';
 import { Boom } from '@hapi/boom';
-import { IWhatsAppProvider, WHATSAPP_PROVIDER } from './whatsapp-provider.interface';
+import { GenericMessage, IWhatsAppProvider } from './whatsapp-provider.interface'; // Import GenericMessage
 
 @Injectable()
 export class BaileysProvider implements IWhatsAppProvider {
@@ -19,23 +18,20 @@ export class BaileysProvider implements IWhatsAppProvider {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     this.sock = makeWASocket({
       auth: state,
+      printQRInTerminal: true, // Muestra el QR directamente en la terminal
       logger: this.logger as any,
     });
 
     this.sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      if (qr) {
-        this.logger.log('QR code available, please scan it.');
-        qrcode.generate(qr, { small: true });
-      }
+      const { connection, lastDisconnect } = update;
       if (connection === 'close') {
         const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-        this.logger.error(`Connection closed due to ${lastDisconnect.error}, reconnecting: ${shouldReconnect}`);
+        this.logger.error(`Conexión cerrada: ${lastDisconnect.error}, reconectando: ${shouldReconnect}`);
         if (shouldReconnect) {
           this.initialize();
         }
       } else if (connection === 'open') {
-        this.logger.log('Opened connection');
+        this.logger.log('Conexión abierta');
       }
     });
 
@@ -43,14 +39,32 @@ export class BaileysProvider implements IWhatsAppProvider {
 
     this.sock.ev.on('messages.upsert', (m) => {
       if (m.messages && m.messages.length > 0) {
-        const message = m.messages[0];
-        // Emitir el mensaje para que el BotService lo procese
-        this.events.emit('message', message);
+        const rawMessage: WAMessage = m.messages[0];
+
+        const messageText = rawMessage.message?.conversation || rawMessage.message?.extendedTextMessage?.text || '';
+
+        // No procesar mensajes vacíos o sin texto
+        if (!messageText.trim()) {
+          return;
+        }
+
+        // Crear el objeto GenericMessage
+        const genericMessage: GenericMessage = {
+          from: rawMessage.key.remoteJid!,
+          text: messageText.trim(),
+          isFromMe: rawMessage.key.fromMe || false,
+          originalMessage: rawMessage,
+        };
+
+        // Emitir el mensaje genérico para que BotService lo procese
+        this.events.emit('message', genericMessage);
       }
     });
   }
 
   async sendMessage(to: string, message: string): Promise<void> {
-    await this.sock.sendMessage(to, { text: message });
+    // Asegurarse que el JID es correcto para grupos o usuarios
+    const jid = to.includes('@g.us') || to.includes('@s.whatsapp.net') ? to : `${to}@s.whatsapp.net`;
+    await this.sock.sendMessage(jid, { text: message });
   }
 }
