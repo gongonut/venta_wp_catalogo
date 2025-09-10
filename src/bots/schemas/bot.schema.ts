@@ -19,6 +19,9 @@ export class Bot {
 
   @Prop()
   qr?: string;
+
+  @Prop()
+  phoneNumber?: string;
 }
 
 export const BotSchema = SchemaFactory.createForClass(Bot);

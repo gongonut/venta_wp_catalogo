@@ -36,7 +36,7 @@ export class BaileysProvider implements IWhatsAppProvider {
         this.events.emit('status', { status: 'close', shouldReconnect });
       } else if (connection === 'open') {
         this.logger.log(`Connection opened for session ${sessionId}`);
-        this.events.emit('status', { status: 'open' });
+        this.events.emit('status', { status: 'open', user: this.sock.user });
       }
     });
 

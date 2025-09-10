@@ -1,4 +1,3 @@
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -9,7 +8,7 @@ export class Empresa {
   @Prop({ required: true, unique: true })
   code: string;
 
-  @Prop({ required: true })
+  @Prop({ required: true, unique: true })
   nombre: string;
 
   @Prop()
@@ -35,6 +34,9 @@ export class Empresa {
 
   @Prop()
   saludoDespedida: string;
+
+  @Prop([String])
+  categorias: string[];
 }
 
 export const EmpresaSchema = SchemaFactory.createForClass(Empresa);

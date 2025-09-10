@@ -93,10 +93,7 @@ export class BotService implements OnModuleInit {
 
     if (empresa) {
       session.company = { code: empresa.code, id: empresa._id.toString() };
-      let response = `${empresa.saludoBienvenida || `¡Bienvenido a ${empresa.nombre}!`} 
-
-Nuestro catálogo es:
-`;
+      let response = `${empresa.saludoBienvenida || `¡Bienvenido a ${empresa.nombre}!`} Nuestro catálogo es:`;
       
       const productos = await this.productosService.findAllByEmpresa(session.company.id);
       if (productos.length > 0) {

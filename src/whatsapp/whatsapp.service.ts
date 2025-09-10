@@ -50,14 +50,18 @@ export class WhatsappService implements OnModuleInit {
       });
 
       session.events.on('status', (statusEvent) => {
-        this.botsService.update(bot.id, { status: statusEvent.status });
-        this.gateway.sendStatus(bot.sessionId, statusEvent.status);
         if (statusEvent.status === 'open') {
           clearTimeout(timeout);
+          if (statusEvent.user && statusEvent.user.id) {
+            const phoneNumber = statusEvent.user.id.split(':')[0].split('@')[0];
+            this.botsService.update(bot.id, { phoneNumber, qr: '', status: 'active' });
+            this.gateway.sendStatus(bot.sessionId, 'active');
+          }
           resolve(null); // Connection is open, no QR code
-        }
-        if (statusEvent.status === 'close') {
+        } else if (statusEvent.status === 'close') {
           this.sessions.delete(bot.sessionId);
+          this.botsService.update(bot.id, { status: 'inactive' });
+          this.gateway.sendStatus(bot.sessionId, 'inactive');
           if (statusEvent.shouldReconnect) {
             this.logger.log(`Reconnecting session ${bot.sessionId} in 5 seconds...`);
             setTimeout(() => this.startBotSession(bot), 5000);

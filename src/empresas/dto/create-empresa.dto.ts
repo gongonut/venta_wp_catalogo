@@ -39,4 +39,7 @@ export class CreateEmpresaDto {
   @IsString()
   @IsOptional()
   saludoDespedida?: string;
+
+  @IsOptional()
+  categorias?: string[];
 }
