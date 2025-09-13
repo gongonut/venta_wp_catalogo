@@ -1,9 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
 import { BotsService } from '../bots/bots.service';
 import { WhatsappGateway } from './whatsapp.gateway';
 import { BotDocument } from '../bots/schemas/bot.schema';
 import { ModuleRef } from '@nestjs/core';
-import { IWhatsAppProvider, WHATSAPP_PROVIDER } from './providers/whatsapp-provider.interface';
+import { GenericMessage, IWhatsAppProvider, WHATSAPP_PROVIDER } from './providers/whatsapp-provider.interface';
+import { ConversationService } from '../conversation/conversation.service';
+import { WAMessage } from '@whiskeysockets/baileys';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
@@ -14,6 +16,8 @@ export class WhatsappService implements OnModuleInit {
     private readonly botsService: BotsService,
     private readonly gateway: WhatsappGateway,
     private readonly moduleRef: ModuleRef,
+    @Inject(forwardRef(() => ConversationService))
+    private readonly conversationService: ConversationService,
   ) {}
 
   async onModuleInit() {
@@ -69,6 +73,20 @@ export class WhatsappService implements OnModuleInit {
         }
       });
 
+      session.events.on('message', (message: WAMessage) => {
+        if (message.key.fromMe) return;
+
+        const genericMessage: GenericMessage = {
+          from: message.key.remoteJid!,
+          text: message.message?.conversation || message.message?.extendedTextMessage?.text || '',
+          isFromMe: message.key.fromMe || false,
+          originalMessage: message,
+          sessionId: bot.sessionId,
+        };
+
+        this.conversationService.handleIncomingMessage(genericMessage);
+      });
+
       try {
         await session.initialize(bot.sessionId);
       } catch (error) {
@@ -89,4 +107,14 @@ export class WhatsappService implements OnModuleInit {
       this.logger.log(`Stopped bot session: ${sessionId}`);
     }
   }
+
+  async sendMessage(sessionId: string, to: string, message: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      await session.sendMessage(to, message);
+    } else {
+      this.logger.warn(`Attempted to send message via non-existent session: ${sessionId}`);
+    }
+  }
 }
+

@@ -7,6 +7,7 @@ import { ClientesModule } from './clientes/clientes.module';
 import { PedidosModule } from './pedidos/pedidos.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BotsModule } from './bots/bots.module';
+import { SessionsModule } from './sessions/sessions.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { BotsModule } from './bots/bots.module';
     ClientesModule,
     PedidosModule,
     BotsModule,
+    SessionsModule,
   ],
   controllers: [],
   providers: [],

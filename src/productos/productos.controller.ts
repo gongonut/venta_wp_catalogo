@@ -53,7 +53,11 @@ export class ProductosController {
         ...result,
       };
     } catch (error) {
-      // Errores de validación o de base de datos serán atrapados aquí
+      // Si el error ya es una BadRequestException con detalles (lanzada por el servicio), la relanzamos.
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      // Para otros errores inesperados, creamos una nueva excepción.
       throw new BadRequestException(error.message);
     }
   }

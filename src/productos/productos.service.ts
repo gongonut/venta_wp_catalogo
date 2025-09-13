@@ -46,11 +46,17 @@ export class ProductosService {
         productsData = xlsx.utils.sheet_to_json(worksheet);
       }
     } catch (error) {
-      throw new BadRequestException('Error al leer o parsear el archivo. Asegúrate de que el formato es correcto.');
+      throw new BadRequestException({ 
+        message: 'Error al leer o parsear el archivo.', 
+        details: 'Asegúrate de que el formato es correcto (Excel o JSON) y el archivo no está dañado.' 
+      });
     }
 
     if (!Array.isArray(productsData) || productsData.length === 0) {
-      throw new BadRequestException('El archivo no contiene productos o el formato es incorrecto.');
+      throw new BadRequestException({ 
+        message: 'El archivo no contiene productos o el formato es incorrecto.',
+        details: 'Asegúrate de que el archivo no está vacío y los productos están en un formato de array/lista válido.'
+      });
     }
 
     const validationErrors = [];
@@ -98,6 +104,15 @@ export class ProductosService {
 
   async findAllByEmpresa(empresaId: string): Promise<ProductoDocument[]> {
     return this.productoModel.find({ empresaId }).exec();
+  }
+
+  async findCategoriesByEmpresa(empresaId: string): Promise<string[]> {
+    // Usamos distinct para obtener las categorías únicas que no son nulas o vacías
+    return this.productoModel.distinct('categoria', { empresaId, categoria: { $nin: [null, ''] } }).exec();
+  }
+
+  async findAllByEmpresaAndCategory(empresaId: string, categoria: string): Promise<ProductoDocument[]> {
+    return this.productoModel.find({ empresaId, categoria }).exec();
   }
 
   async findOneBySkuAndEmpresa(sku: string, empresaId: string): Promise<ProductoDocument> {

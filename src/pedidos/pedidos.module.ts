@@ -7,7 +7,8 @@ import { Pedido, PedidoSchema } from './schemas/pedido.schema';
 @Module({
   imports: [MongooseModule.forFeature([{ name: Pedido.name, schema: PedidoSchema }])],
   controllers: [PedidosController],
-  providers: [PedidosService]
+  providers: [PedidosService],
+  exports: [PedidosService]
 })
 export class PedidosModule {}
 
