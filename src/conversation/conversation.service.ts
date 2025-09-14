@@ -96,7 +96,8 @@ Escribe *cancelar* para reiniciar la sesión.`;
   }
 
   private async handleCompanySelection(userJid: string, session: UserSessionDocument, messageText: string) {
-    const empresa = await this.empresasService.findOneByCode(messageText);
+    // Se busca la empresa por nombre en lugar de por código
+    const empresa = await this.empresasService.findOneByName(messageText);
 
     if (empresa) {
       session.company = { code: empresa.code, id: empresa._id.toString() };
@@ -126,9 +127,11 @@ Escribe *ver carrito* o *pedido* para finalizar.`;
       }
     } else {
       const empresas = await this.empresasService.findAll();
-      let response = `Hola, bienvenido. Por favor, elige una de nuestras empresas respondiendo con su código:
+      // Se actualiza el mensaje para pedir el nombre
+      let response = `Hola, bienvenido. Por favor, elige una de nuestras empresas respondiendo con su nombre:
 `;
-      response += empresas.map(e => `*${e.code}* - ${e.nombre}`).join(`
+      // Se muestra solo el nombre de la empresa
+      response += empresas.map(e => `*${e.nombre}*`).join(`
 `);
       await this.sendMessage(userJid, session.sessionId, response);
     }

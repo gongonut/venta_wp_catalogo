@@ -8,9 +8,11 @@ import { PedidosModule } from './pedidos/pedidos.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BotsModule } from './bots/bots.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
     }),

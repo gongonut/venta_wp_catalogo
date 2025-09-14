@@ -6,11 +6,15 @@ import { ModuleRef } from '@nestjs/core';
 import { GenericMessage, IWhatsAppProvider, WHATSAPP_PROVIDER } from './providers/whatsapp-provider.interface';
 import { ConversationService } from '../conversation/conversation.service';
 import { WAMessage } from '@whiskeysockets/baileys';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { promises as fs } from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
   private readonly logger = new Logger(WhatsappService.name);
   private sessions = new Map<string, IWhatsAppProvider>();
+  private readonly SESSIONS_DIR = join(process.cwd(), 'auth_info_baileys');
 
   constructor(
     private readonly botsService: BotsService,
@@ -28,6 +32,35 @@ export class WhatsappService implements OnModuleInit {
         this.startBotSession(bot).catch(error => this.logger.error(`Failed to auto-start session for ${bot.sessionId}`, error));
       }
     });
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, {
+    name: 'purge_old_sessions',
+    timeZone: 'America/Bogota',
+  })
+  async handlePurgeOldSessions() {
+    this.logger.log('Running scheduled job: Purging old WhatsApp session directories...');
+    try {
+      const activeSessionIds = new Set(this.sessions.keys());
+      const allSessionDirs = await fs.readdir(this.SESSIONS_DIR, { withFileTypes: true });
+
+      const deletionPromises = allSessionDirs
+        .filter(dirent => dirent.isDirectory() && !activeSessionIds.has(dirent.name))
+        .map(dirent => {
+          const dirPath = join(this.SESSIONS_DIR, dirent.name);
+          this.logger.log(`Deleting inactive session directory: ${dirPath}`);
+          return fs.rm(dirPath, { recursive: true, force: true });
+        });
+
+      await Promise.all(deletionPromises);
+      this.logger.log('Finished purging old WhatsApp session directories.');
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        this.logger.warn('Session directory not found, skipping purge. It will be created on first session init.');
+      } else {
+        this.logger.error('Error purging old WhatsApp session directories', error);
+      }
+    }
   }
 
   async startBotSession(bot: BotDocument): Promise<string | null> {

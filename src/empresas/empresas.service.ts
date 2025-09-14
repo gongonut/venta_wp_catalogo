@@ -26,6 +26,11 @@ export class EmpresasService {
     return this.empresaModel.findOne({ code }).exec();
   }
 
+  async findOneByName(name: string): Promise<EmpresaDocument> {
+    // Búsqueda insensible a mayúsculas/minúsculas que coincida con el nombre exacto
+    return this.empresaModel.findOne({ nombre: { $regex: `^${name}$`, $options: 'i' } }).exec();
+  }
+
   async update(id: string, updateEmpresaDto: UpdateEmpresaDto): Promise<EmpresaDocument> {
     return this.empresaModel.findByIdAndUpdate(id, updateEmpresaDto, { new: true }).exec();
   }
@@ -34,4 +39,3 @@ export class EmpresasService {
     return this.empresaModel.findByIdAndDelete(id).exec();
   }
 }
-
