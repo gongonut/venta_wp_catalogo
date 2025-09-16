@@ -6,7 +6,7 @@ import makeWASocket, {
   WAMessage,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import { IWhatsAppProvider } from './whatsapp-provider.interface';
+import { Button, IWhatsAppProvider } from './whatsapp-provider.interface';
 import * as pino from 'pino';
 
 @Injectable()
@@ -52,6 +52,24 @@ export class BaileysProvider implements IWhatsAppProvider {
 
   async sendMessage(to: string, message: string): Promise<void> {
     await this.sock.sendMessage(to, { text: message });
+  }
+
+  async sendButtonsMessage(to: string, text: string, footer: string, buttons: Button[]): Promise<void> {
+    const buttonsPayload = buttons.map(b => ({
+      buttonId: b.id,
+      buttonText: { displayText: b.text },
+      type: 1,
+    }));
+
+    const buttonMessage = {
+      text: text,
+      footer: footer,
+      buttons: buttonsPayload,
+      headerType: 1,
+    };
+
+    this.logger.debug(`Sending buttons to ${to}:`, buttonMessage);
+    await this.sock.sendMessage(to, buttonMessage);
   }
 
   async disconnect(): Promise<void> {

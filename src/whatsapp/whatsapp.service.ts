@@ -3,7 +3,7 @@ import { BotsService } from '../bots/bots.service';
 import { WhatsappGateway } from './whatsapp.gateway';
 import { BotDocument } from '../bots/schemas/bot.schema';
 import { ModuleRef } from '@nestjs/core';
-import { GenericMessage, IWhatsAppProvider, WHATSAPP_PROVIDER } from './providers/whatsapp-provider.interface';
+import { Button, GenericMessage, IWhatsAppProvider, WHATSAPP_PROVIDER } from './providers/whatsapp-provider.interface';
 import { ConversationService } from '../conversation/conversation.service';
 import { WAMessage } from '@whiskeysockets/baileys';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -147,6 +147,15 @@ export class WhatsappService implements OnModuleInit {
       await session.sendMessage(to, message);
     } else {
       this.logger.warn(`Attempted to send message via non-existent session: ${sessionId}`);
+    }
+  }
+
+  async sendButtonsMessage(sessionId: string, to: string, text: string, footer: string, buttons: Button[]): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      await session.sendButtonsMessage(to, text, footer, buttons);
+    } else {
+      this.logger.warn(`Attempted to send buttons via non-existent session: ${sessionId}`);
     }
   }
 }

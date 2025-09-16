@@ -38,6 +38,12 @@ export class UserSession {
   @Prop([String])
   availableCategories?: string[];
 
+  @Prop([String])
+  displayedCompanies?: string[];
+
+  @Prop({ type: Object })
+  numberedOptions?: Record<string, string>;
+
   @Prop({ required: true })
   sessionId: string;
 }

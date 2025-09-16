@@ -9,10 +9,16 @@ export interface GenericMessage {
   sessionId: string; // ID de la sesión del bot que recibió el mensaje
 }
 
+export interface Button {
+  id: string;
+  text: string;
+}
+
 export interface IWhatsAppProvider {
   events: EventEmitter;
   initialize(sessionId: string): Promise<void>;
   sendMessage(to: string, message: string): Promise<void>;
+  sendButtonsMessage(to: string, text: string, footer: string, buttons: Button[]): Promise<void>;
   disconnect(): Promise<void>;
 }
 

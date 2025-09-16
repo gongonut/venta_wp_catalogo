@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { Producto, ProductoSchema } from './producto.schema';
 
 export type EmpresaDocument = Empresa & Document;
 
@@ -37,6 +38,9 @@ export class Empresa {
 
   @Prop([String])
   categorias: string[];
+
+  @Prop({ type: [ProductoSchema] })
+  productos: Producto[];
 }
 
 export const EmpresaSchema = SchemaFactory.createForClass(Empresa);

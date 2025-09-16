@@ -36,4 +36,9 @@ export class SessionsService {
     });
     return newSession.save();
   }
+
+  async clearAllSessions(): Promise<{ deletedCount?: number }> {
+    const result = await this.sessionModel.deleteMany({}).exec();
+    return { deletedCount: result.deletedCount };
+  }
 }

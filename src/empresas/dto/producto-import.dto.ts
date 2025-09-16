@@ -1,12 +1,10 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional } from 'class-validator';
 
 export class ProductoImportDto {
   @IsString()
-  @IsNotEmpty()
   sku: string;
 
   @IsString()
-  @IsNotEmpty()
   nombreCorto: string;
 
   @IsString()
@@ -15,22 +13,14 @@ export class ProductoImportDto {
 
   @IsString()
   @IsOptional()
-  categoria?: string;
+  descripcion?: string;
 
   @IsNumber()
-  @Min(0)
-  @IsOptional()
-  existencia?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  costo?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsNotEmpty()
   precioVenta: number;
+
+  @IsString()
+  @IsOptional()
+  categoria?: string;
 
   @IsString()
   @IsOptional()
