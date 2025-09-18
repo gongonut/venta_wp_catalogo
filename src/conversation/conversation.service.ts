@@ -8,6 +8,7 @@ import { CreatePedidoDto } from '../pedidos/dto/create-pedido.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { UserSessionDocument } from '../sessions/schemas/session.schema';
+import { Producto } from '../empresas/schemas/producto.schema';
 
 @Injectable()
 export class ConversationService implements OnModuleInit {
@@ -24,81 +25,113 @@ export class ConversationService implements OnModuleInit {
     private readonly pedidosService: PedidosService,
   ) {}
 
+  private formatPrice(producto: Producto): string {
+    if (producto.presentacion && producto.presentacion.size > 0) {
+      const prices = [];
+      for (const pres of producto.presentacion.values()) {
+        if (pres.disponible && pres.precioventa) {
+          prices.push(pres.precioventa);
+        }
+      }
+  
+      if (prices.length > 0) {
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+  
+        if (minPrice === maxPrice) {
+          return `${minPrice.toFixed(2)}`;
+        } else {
+          return `${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}`;
+        }
+      }
+    }
+    
+    return `${producto.precioVenta.toFixed(2)}`;
+  }
+
   onModuleInit() {
     this.logger.log('ConversationService initialized for persistent sessions.');
   }
 
   public async handleIncomingMessage(message: GenericMessage) {
-    this.logger.debug(`Processing message from ${message.from} via session ${message.sessionId}: "${message.text}"`);
-    const userJid = message.from;
-    let messageText = message.text.trim().toLowerCase();
+    try {
+      this.logger.debug(`Processing message from ${message.from} via session ${message.sessionId}: "${message.text}"`);
+      const userJid = message.from;
+      let messageText = message.text.trim().toLowerCase();
 
-    if (messageText === 'borrar_sesiones_clientes_ahora') {
-      const result = await this.sessionsService.clearAllSessions();
-      await this.sendMessage(userJid, message.sessionId, `Se han eliminado ${result.deletedCount} sesiones de clientes.`);
-      return;
-    }
+      if (messageText === 'borrar_sesiones_clientes_ahora') {
+        const result = await this.sessionsService.clearAllSessions();
+        await this.sendMessage(userJid, message.sessionId, `Se han eliminado ${result.deletedCount} sesiones de clientes.`);
+        return;
+      }
 
-    this.resetInactivityTimer(userJid, message.sessionId);
+      this.resetInactivityTimer(userJid, message.sessionId);
 
-    const session = await this.sessionsService.findOrCreate(userJid, message.sessionId);
+      const session = await this.sessionsService.findOrCreate(userJid, message.sessionId);
 
-    if (session.numberedOptions && session.numberedOptions[messageText]) {
-      messageText = session.numberedOptions[messageText];
-    }
+      if (session.numberedOptions && session.numberedOptions[messageText]) {
+        messageText = session.numberedOptions[messageText];
+      }
 
-    // Universal commands
-    if (['cancelar', 'terminar', 'finalizar'].includes(messageText)) {
-      await this.resetSession(userJid, session);
-      await session.save();
-      return;
-    }
-
-    if (['regresar', 'volver'].includes(messageText)) {
-      if (session.state === 'browsing_products') {
-        messageText = 'categorias'; // Alias to existing back command
-      } else {
-        await this.handleGoBack(userJid, session);
+      // Universal commands
+      if (['cancelar', 'terminar', 'finalizar'].includes(messageText)) {
+        await this.resetSession(userJid, session);
         await session.save();
         return;
       }
-    }
 
-    switch (session.state) {
-      case 'selecting_company':
-        await this.handleCompanySelection(userJid, session, messageText);
-        break;
-      case 'selecting_category':
-        await this.handleCategorySelection(userJid, session, messageText);
-        break;
-      case 'browsing_products':
-        const detailRegex = /^(de|detalle)\s+(\S+)/;
-        const detailMatch = messageText.match(detailRegex);
+      if (['regresar', 'volver'].includes(messageText)) {
+        if (session.state === 'browsing_products') {
+          messageText = 'categorias'; // Alias to existing back command
+        } else {
+          await this.handleGoBack(userJid, session);
+          await session.save();
+          return;
+        }
+      }
 
-        if (detailMatch) {
-          const [, , itemIdentifier] = detailMatch; // Adjusted to get the second group
-          await this.handleProductDetail(userJid, session, itemIdentifier);
+      switch (session.state) {
+        case 'selecting_company':
+          await this.handleCompanySelection(userJid, session, messageText);
           break;
-        }
+        case 'selecting_category':
+          await this.handleCategorySelection(userJid, session, messageText);
+          break;
+        case 'selecting_presentation':
+          await this.handlePresentationSelection(userJid, session, messageText);
+          break;
+        case 'browsing_products':
+          const detailRegex = /^(de|detalle)\s+(\S+)/;
+          const detailMatch = messageText.match(detailRegex);
 
-        switch (messageText) {
-          case 'pedido':
-            await this.handleCreateOrder(userJid, session);
+          if (detailMatch) {
+            const [, , itemIdentifier] = detailMatch; // Adjusted to get the second group
+            await this.handleProductDetail(userJid, session, itemIdentifier);
             break;
-          case 'ver carrito':
-            await this.handleShowCart(userJid, session);
-            break;
-          case 'categorias':
-            await this.showCategories(userJid, session);
-            break;
-          default:
-            await this.handleOrdering(userJid, session, messageText);
-            break;
-        }
-        break;
+          }
+
+          switch (messageText) {
+            case 'pedido':
+              await this.handleCreateOrder(userJid, session);
+              break;
+            case 'ver carrito':
+              await this.handleShowCart(userJid, session);
+              break;
+            case 'categorias':
+              await this.showCategories(userJid, session);
+              break;
+            default:
+              await this.handleOrdering(userJid, session, messageText);
+              break;
+          }
+          break;
+      }
+      
+      await session.save();
+    } catch (error) {
+      this.logger.error(`Error processing message from ${message.from}: ${error.stack}`);
+      await this.sendMessage(message.from, message.sessionId, 'Lo sentimos, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.');
     }
-    
-    await session.save();
   }
 
   private async resetSession(userJid: string, session: UserSessionDocument, sendMessage = true, message?: string) {
@@ -108,6 +141,7 @@ export class ConversationService implements OnModuleInit {
     session.state = 'selecting_company';
     session.availableCategories = [];
     session.numberedOptions = {};
+    session.pendingOrder = undefined;
 
     if (this.sessionTimers.has(userJid)) {
       const timers = this.sessionTimers.get(userJid);
@@ -153,11 +187,10 @@ export class ConversationService implements OnModuleInit {
   }
 
   private async endInactiveSession(userJid: string, sessionId: string) {
-    const session = await this.sessionsService.findOrCreate(userJid, sessionId);
-    if (session) {
-        await this.resetSession(userJid, session, true, 'Tu sesión ha sido cerrada por inactividad.');
-        await session.save();
-        this.logger.log(`Session for ${userJid} terminated due to inactivity.`);
+    await this.sendMessage(userJid, sessionId, 'Tu sesión ha sido cerrada por inactividad.');
+    const result = await this.sessionsService.delete(userJid);
+    if (result.deletedCount > 0) {
+        this.logger.log(`Session for ${userJid} terminated and deleted due to inactivity.`);
     }
     this.sessionTimers.delete(userJid);
   }
@@ -219,14 +252,22 @@ export class ConversationService implements OnModuleInit {
     await this.sendMessage(userJid, session.sessionId, `${text}\n${categoryList}`);
 
     session.numberedOptions['re'] = 'regresar';
-    const footer = `Escribe *cancelar* para reiniciar.\n\nOpciones:\n*RE*. Regresar a empresas`;
+    const footer = `Escribe *cancelar* para reiniciar.
+
+Opciones:
+*RE*. Regresar a empresas`;
 
     const response = `${footer}\n\nEscribe el número de la categoría o el código de la opción.`;
     await this.sendMessage(userJid, session.sessionId, response);
   }
 
   private async handleCompanySelection(userJid: string, session: UserSessionDocument, messageText: string) {
-    const empresa = await this.empresasService.findOneByName(messageText);
+    let empresa;
+    try {
+      empresa = await this.empresasService.findOneByName(messageText);
+    } catch (error) {
+      this.logger.error(`Error finding company by name "${messageText}": ${error.stack}`);
+    }
 
     if (empresa) {
       session.numberedOptions = {};
@@ -243,16 +284,20 @@ export class ConversationService implements OnModuleInit {
         const productosEnStock = productos.filter(p => p.existencia > 0);
 
         if (productosEnStock.length > 0) {
-          const productList = productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${p.precioVenta}`).join('\n');
+          const productList = productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${this.formatPrice(p)}`).join('\n');
           await this.sendMessage(userJid, session.sessionId, `Nuestro catálogo es:\n${productList}`);
 
-          const orderingInstructions = `Para ordenar, envía: *SKU Cantidad* (ej: *PROD01 2*)
-`;
+          const orderingInstructions = `Para ordenar, envía: *SKU Cantidad* (ej: *PROD01 2*)\n`;
           await this.sendMessage(userJid, session.sessionId, orderingInstructions);
 
           session.numberedOptions['vc'] = 'ver carrito';
           session.numberedOptions['fp'] = 'pedido';
-          const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE SKU)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nEscribe *cancelar* para reiniciar.`;
+          const optionsMessage = `Opciones:
+*DE*. Ver Detalle (ej: DE SKU)
+*VC*. Ver carrito
+*FP*. Finalizar pedido
+
+Escribe *cancelar* para reiniciar.`;
           await this.sendMessage(userJid, session.sessionId, optionsMessage);
         } else {
           await this.sendMessage(userJid, session.sessionId, 'Actualmente no tenemos productos en el catálogo.');
@@ -263,16 +308,20 @@ export class ConversationService implements OnModuleInit {
       const text = 'Hola, bienvenido. Por favor, elige una de nuestras empresas:';
       session.numberedOptions = {};
 
-      if (empresas.length > 0 && empresas.length <= 3) {
-        const buttons: Button[] = empresas.map(e => ({ id: e.nombre, text: e.nombre }));
-        await this.sendButtons(userJid, session.sessionId, text, 'Escribe *cancelar*, *terminar* o *finalizar* para reiniciar', buttons);
-      } else if (empresas.length > 3) {
+      if (empresas.length > 0) {
         const companyList = empresas.map((e, index) => {
-            const number = index + 1;
-            session.numberedOptions[number] = e.nombre.toLowerCase();
-            return `*${number}*. ${e.nombre}`;
-        }).join('\n');
-        await this.sendMessage(userJid, session.sessionId, `${text}\n${companyList}`);
+          const number = index + 1;
+          session.numberedOptions[number] = e.nombre.toLowerCase();
+          let companyDetails = `*${number}*. ${e.nombre}`;
+          if (e.whatsApp) {
+            companyDetails += `\n  Celular: ${e.whatsApp}`;
+          }
+          if (e.direccion) {
+            companyDetails += `\n  Dirección: ${e.direccion}`;
+          }
+          return companyDetails;
+        }).join('\n\n');
+        await this.sendMessage(userJid, session.sessionId, `${text}\n\n${companyList}`);
         await this.sendMessage(userJid, session.sessionId, `Escribe el número de la empresa que deseas o *cancelar* / *terminar* / *finalizar* para reiniciar.`);
       } else {
         await this.sendMessage(userJid, session.sessionId, `${text}\nNo hay empresas configuradas.`);
@@ -296,12 +345,12 @@ export class ConversationService implements OnModuleInit {
             productList += productosEnStock.map((p, index) => {
                 const number = index + 1;
                 session.numberedOptions[number] = p.sku;
-                return `*${number}*. ${p.nombreCorto} - ${p.precioVenta}`;
+                return `*${number}*. ${p.nombreCorto} - ${this.formatPrice(p)}`;
             }).join('\n');
             await this.sendMessage(userJid, session.sessionId, productList);
             await this.sendMessage(userJid, session.sessionId, 'Para ordenar, envía: *Número Cantidad* (ej: *1 2*)');
         } else {
-            productList += productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${p.precioVenta}`).join('\n');
+            productList += productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${this.formatPrice(p)}`).join('\n');
             await this.sendMessage(userJid, session.sessionId, productList);
             await this.sendMessage(userJid, session.sessionId, 'Para ordenar, envía: *SKU Cantidad* (ej: *PROD01 2*)');
         }
@@ -309,7 +358,13 @@ export class ConversationService implements OnModuleInit {
         session.numberedOptions['rc'] = 'categorias';
         session.numberedOptions['vc'] = 'ver carrito';
         session.numberedOptions['fp'] = 'pedido';
-        const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nEscribe *cancelar* para reiniciar.`;
+        const optionsMessage = `Opciones:
+*DE*. Ver Detalle (ej: DE 1)
+*RC*. Volver a categorías (o escribe *regresar*)
+*VC*. Ver carrito
+*FP*. Finalizar pedido
+
+Escribe *cancelar* para reiniciar.`;
         await this.sendMessage(userJid, session.sessionId, optionsMessage);
       } else {
         await this.sendMessage(userJid, session.sessionId, `No hay productos en esta categoría.`);
@@ -319,6 +374,66 @@ export class ConversationService implements OnModuleInit {
     } else {
       await this.sendMessage(userJid, session.sessionId, 'Categoría no válida. Por favor, elige una de la lista o escribe *cancelar*, *terminar* o *finalizar*.');
       await this.showCategories(userJid, session);
+    }
+  }
+
+  private async handlePresentationSelection(userJid: string, session: UserSessionDocument, messageText: string) {
+    const chosenOption = session.numberedOptions[messageText];
+    if (!chosenOption) {
+        await this.sendMessage(userJid, session.sessionId, 'Opción no válida. Por favor, elige un número de la lista.');
+        return;
+    }
+
+    const producto = await this.empresasService.findProductBySku(session.company!.id, session.pendingOrder!.sku);
+    
+    if (!producto || !producto.presentacion) {
+      await this.sendMessage(userJid, session.sessionId, 'Hubo un error al procesar tu selección. Por favor, intenta de nuevo.');
+      session.state = 'browsing_products';
+      session.pendingOrder = undefined;
+      return;
+    }
+
+    const selectedPresentation = producto.presentacion.get(chosenOption);
+
+    if (selectedPresentation && session.pendingOrder) {
+        const { quantity } = session.pendingOrder;
+
+        const existingItem = session.cart.find(item => item.sku === producto.sku && item.presentacion === chosenOption );
+
+        if (existingItem) {
+            existingItem.quantity = quantity;
+        } else {
+            session.cart.push({
+                sku: producto.sku, 
+                quantity, 
+                precioVenta: selectedPresentation.precioventa, 
+                nombreCorto: producto.nombreCorto,
+                presentacion: chosenOption 
+            });
+        }
+
+        await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto} (${chosenOption}).`);
+
+        session.state = 'browsing_products';
+        session.pendingOrder = undefined;
+        session.numberedOptions = {};
+
+        session.numberedOptions['rc'] = 'categorias';
+        session.numberedOptions['vc'] = 'ver carrito';
+        session.numberedOptions['fp'] = 'pedido';
+        const optionsMessage = `Opciones:
+*DE*. Ver Detalle (ej: DE 1)
+*RC*. Volver a categorías (o escribe *regresar*)
+*VC*. Ver carrito
+*FP*. Finalizar pedido
+
+Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
+        await this.sendMessage(userJid, session.sessionId, optionsMessage);
+
+    } else {
+        await this.sendMessage(userJid, session.sessionId, 'Hubo un error al seleccionar la presentación. Por favor, intenta de nuevo.');
+        session.state = 'browsing_products';
+        session.pendingOrder = undefined;
     }
   }
 
@@ -340,20 +455,45 @@ export class ConversationService implements OnModuleInit {
       const producto = await this.empresasService.findProductBySku(session.company!.id, sku);
       
       if (producto) {
-        const existingItem = session.cart.find(item => item.sku === producto.sku);
-        if (existingItem) {
-          existingItem.quantity = quantity;
-        } else {
-          session.cart.push({ sku: producto.sku, quantity, precioVenta: producto.precioVenta, nombreCorto: producto.nombreCorto });
-        }
-        await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto}.`);
-        
-        session.numberedOptions['rc'] = 'categorias';
-        session.numberedOptions['vc'] = 'ver carrito';
-        session.numberedOptions['fp'] = 'pedido';
-        const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nPara agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
-        await this.sendMessage(userJid, session.sessionId, optionsMessage);
+        if (producto.presentacion && producto.presentacion.size > 0) {
+          const availablePresentations = Array.from(producto.presentacion.entries()).filter(([, p]) => p.disponible);
+          if (availablePresentations.length > 0) {
+            session.state = 'selecting_presentation';
+            session.pendingOrder = { sku: producto.sku, quantity: quantity };
+            
+            session.numberedOptions = {};
+            const presentationList = availablePresentations.map(([name, p], index) => {
+                const optionNumber = index + 1;
+                session.numberedOptions[optionNumber] = name; 
+                return `*${optionNumber}*. ${name} - ${p.precioventa.toFixed(2)}`;
+            }).join('\n');
 
+            await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" tiene varias presentaciones. Por favor, elige una:\n${presentationList}`);
+            await this.sendMessage(userJid, session.sessionId, 'Escribe el número de la presentación que deseas.');
+          } else {
+            await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" no tiene presentaciones disponibles en este momento.`);
+          }
+        } else {
+          const existingItem = session.cart.find(item => item.sku === producto.sku && !item.presentacion);
+          if (existingItem) {
+            existingItem.quantity = quantity;
+          } else {
+            session.cart.push({ sku: producto.sku, quantity, precioVenta: producto.precioVenta, nombreCorto: producto.nombreCorto });
+          }
+          await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto}.`);
+          
+          session.numberedOptions['rc'] = 'categorias';
+          session.numberedOptions['vc'] = 'ver carrito';
+          session.numberedOptions['fp'] = 'pedido';
+          const optionsMessage = `Opciones:
+*DE*. Ver Detalle (ej: DE 1)
+*RC*. Volver a categorías (o escribe *regresar*)
+*VC*. Ver carrito
+*FP*. Finalizar pedido
+
+Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
+          await this.sendMessage(userJid, session.sessionId, optionsMessage);
+        }
       } else {
         await this.sendMessage(userJid, session.sessionId, `❌ No encontramos el producto con código "${itemIdentifier.toUpperCase()}". Por favor, verifica el código.`);
       }
@@ -362,7 +502,13 @@ export class ConversationService implements OnModuleInit {
       session.numberedOptions['vc'] = 'ver carrito';
       session.numberedOptions['fp'] = 'pedido';
       await this.sendMessage(userJid, session.sessionId, "No entendí tu mensaje. Para ordenar, usa el formato *SKU/Número Cantidad*.");
-      const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nO escribe *cancelar* para reiniciar.`;
+      const optionsMessage = `Opciones:
+*DE*. Ver Detalle (ej: DE 1)
+*RC*. Volver a categorías (o escribe *regresar*)
+*VC*. Ver carrito
+*FP*. Finalizar pedido
+
+O escribe *cancelar* para reiniciar.`;
       await this.sendMessage(userJid, session.sessionId, optionsMessage);
     }
   }
@@ -376,15 +522,22 @@ export class ConversationService implements OnModuleInit {
     const cartItems = session.cart.map(item => {
       const subtotal = item.quantity * item.precioVenta;
       total += subtotal;
-      return `${item.quantity} x ${item.nombreCorto} (*${item.sku}*) - ${subtotal.toFixed(2)}`;
+      const displayName = item.presentacion ? `${item.nombreCorto} (${item.presentacion})` : item.nombreCorto;
+      return `${item.quantity} x ${displayName} (*${item.sku}*) - ${subtotal.toFixed(2)}`;
     });
     const cartContent = `🛒 *Tu Carrito:*
-${cartItems.join('\n')}\n\n*Total: ${total.toFixed(2)}*`;
+${cartItems.join('\n')}
+
+*Total: ${total.toFixed(2)}*`;
     await this.sendMessage(userJid, session.sessionId, cartContent);
 
     session.numberedOptions['rc'] = 'categorias';
     session.numberedOptions['fp'] = 'pedido';
-    const optionsMessage = `Opciones:\n*RC*. Volver a categorías (o escribe *regresar*)\n*FP*. Confirmar pedido\n\nEscribe *cancelar* para reiniciar.`;
+    const optionsMessage = `Opciones:
+*RC*. Volver a categorías (o escribe *regresar*)
+*FP*. Confirmar pedido
+
+Escribe *cancelar* para reiniciar.`;
     await this.sendMessage(userJid, session.sessionId, optionsMessage);
   }
 

@@ -17,6 +17,9 @@ class CartItem {
 
   @Prop({ required: true })
   nombreCorto: string;
+
+  @Prop({ type: Object })
+  presentacion?: any;
 }
 const CartItemSchema = SchemaFactory.createForClass(CartItem);
 
@@ -46,6 +49,9 @@ export class UserSession {
 
   @Prop({ required: true })
   sessionId: string;
+
+  @Prop({ type: Object })
+  pendingOrder?: { sku: string; quantity: number; };
 }
 
 export const UserSessionSchema = SchemaFactory.createForClass(UserSession);
