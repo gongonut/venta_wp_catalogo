@@ -20,6 +20,15 @@ export class Producto {
   @Prop({ required: true, default: 0 })
   existencia: number;
 
+  @Prop({
+    type: Map,
+    of: {
+      precioventa: { type: Number, required: true },
+      existencia: { type: Number, required: true, default: 0 },
+    },
+  })
+  presentacion: Map<string, { precioventa: number; existencia: number }>;
+
   @Prop()
   categoria: string;
 

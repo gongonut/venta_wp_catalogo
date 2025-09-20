@@ -41,4 +41,9 @@ export class SessionsService {
     const result = await this.sessionModel.deleteMany({}).exec();
     return { deletedCount: result.deletedCount };
   }
+
+  async delete(userJid: string): Promise<{ deletedCount?: number }> {
+    const result = await this.sessionModel.deleteOne({ userJid }).exec();
+    return { deletedCount: result.deletedCount };
+  }
 }

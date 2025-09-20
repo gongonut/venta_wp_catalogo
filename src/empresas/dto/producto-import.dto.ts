@@ -41,4 +41,8 @@ export class ProductoImportDto {
   @IsString()
   @IsOptional()
   foto5?: string;
+
+  @IsString()
+  @IsOptional()
+  presentacion?: string;
 }

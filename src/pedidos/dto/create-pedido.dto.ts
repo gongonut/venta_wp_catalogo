@@ -1,4 +1,4 @@
-import { IsString, IsMongoId, IsArray, ValidateNested, IsNumber } from 'class-validator';
+import { IsString, IsMongoId, IsArray, ValidateNested, IsNumber, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class PedidoItemDto {
@@ -7,6 +7,10 @@ class PedidoItemDto {
 
   @IsNumber()
   cantidad: number;
+
+  @IsString()
+  @IsOptional()
+  presentacion?: string;
 }
 
 export class CreatePedidoDto {

@@ -25,30 +25,6 @@ export class ConversationService implements OnModuleInit {
     private readonly pedidosService: PedidosService,
   ) {}
 
-  private formatPrice(producto: Producto): string {
-    if (producto.presentacion && producto.presentacion.size > 0) {
-      const prices = [];
-      for (const pres of producto.presentacion.values()) {
-        if (pres.disponible && pres.precioventa) {
-          prices.push(pres.precioventa);
-        }
-      }
-  
-      if (prices.length > 0) {
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-  
-        if (minPrice === maxPrice) {
-          return `${minPrice.toFixed(2)}`;
-        } else {
-          return `${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}`;
-        }
-      }
-    }
-    
-    return `${producto.precioVenta.toFixed(2)}`;
-  }
-
   onModuleInit() {
     this.logger.log('ConversationService initialized for persistent sessions.');
   }
@@ -69,7 +45,7 @@ export class ConversationService implements OnModuleInit {
 
       const session = await this.sessionsService.findOrCreate(userJid, message.sessionId);
 
-      if (session.numberedOptions && session.numberedOptions[messageText]) {
+      if (session.state !== 'selecting_presentation' && session.numberedOptions && session.numberedOptions[messageText]) {
         messageText = session.numberedOptions[messageText];
       }
 
@@ -195,6 +171,12 @@ export class ConversationService implements OnModuleInit {
     this.sessionTimers.delete(userJid);
   }
 
+  private formatCurrency(amount: number): string {
+    // In a real app, you might want to get the currency symbol from company settings
+    const currencySymbol = '$'; 
+    return `${currencySymbol}${amount.toFixed(2)}`;
+  }
+
   private async handleGoBack(userJid: string, session: UserSessionDocument) {
     if (session.state === 'selecting_category') {
         session.state = 'selecting_company';
@@ -284,7 +266,20 @@ Opciones:
         const productosEnStock = productos.filter(p => p.existencia > 0);
 
         if (productosEnStock.length > 0) {
-          const productList = productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${this.formatPrice(p)}`).join('\n');
+          const productList = productosEnStock.map(p => {
+            const hasPresentations = p.presentacion && p.presentacion.size > 0;
+            if (hasPresentations) {
+                const availablePresentations = Array.from(p.presentacion.entries())
+                    .filter(([, pres]) => pres.existencia > 0);
+                if (availablePresentations.length > 0) {
+                    const presentationLines = availablePresentations
+                        .map(([name, pres]) => `  ${name} - ${this.formatCurrency(pres.precioventa)}`)
+                        .join('\n');
+                    return `*${p.sku}* - ${p.nombreCorto}\n${presentationLines}`;
+                }
+            }
+            return `*${p.sku}* - ${p.nombreCorto} - ${this.formatCurrency(p.precioVenta)}`;
+          }).join('\n\n');
           await this.sendMessage(userJid, session.sessionId, `Nuestro catálogo es:\n${productList}`);
 
           const orderingInstructions = `Para ordenar, envía: *SKU Cantidad* (ej: *PROD01 2*)\n`;
@@ -345,12 +340,36 @@ Escribe *cancelar* para reiniciar.`;
             productList += productosEnStock.map((p, index) => {
                 const number = index + 1;
                 session.numberedOptions[number] = p.sku;
-                return `*${number}*. ${p.nombreCorto} - ${this.formatPrice(p)}`;
-            }).join('\n');
+                const hasPresentations = p.presentacion && p.presentacion.size > 0;
+                if (hasPresentations) {
+                    const availablePresentations = Array.from(p.presentacion.entries())
+                        .filter(([, pres]) => pres.existencia > 0);
+                    if (availablePresentations.length > 0) {
+                        const presentationLines = availablePresentations
+                            .map(([name, pres]) => `  ${name} - ${this.formatCurrency(pres.precioventa)}`)
+                            .join('\n');
+                        return `*${number}*. ${p.nombreCorto}\n${presentationLines}`;
+                    }
+                }
+                return `*${number}*. ${p.nombreCorto} - ${this.formatCurrency(p.precioVenta)}`;
+            }).join('\n\n');
             await this.sendMessage(userJid, session.sessionId, productList);
             await this.sendMessage(userJid, session.sessionId, 'Para ordenar, envía: *Número Cantidad* (ej: *1 2*)');
         } else {
-            productList += productosEnStock.map(p => `*${p.sku}* - ${p.nombreCorto} - ${this.formatPrice(p)}`).join('\n');
+            productList += productosEnStock.map(p => {
+                const hasPresentations = p.presentacion && p.presentacion.size > 0;
+                if (hasPresentations) {
+                    const availablePresentations = Array.from(p.presentacion.entries())
+                        .filter(([, pres]) => pres.existencia > 0);
+                    if (availablePresentations.length > 0) {
+                        const presentationLines = availablePresentations
+                            .map(([name, pres]) => `  ${name} - ${this.formatCurrency(pres.precioventa)}`)
+                            .join('\n');
+                        return `*${p.sku}* - ${p.nombreCorto}\n${presentationLines}`;
+                    }
+                }
+                return `*${p.sku}* - ${p.nombreCorto} - ${this.formatCurrency(p.precioVenta)}`;
+            }).join('\n\n');
             await this.sendMessage(userJid, session.sessionId, productList);
             await this.sendMessage(userJid, session.sessionId, 'Para ordenar, envía: *SKU Cantidad* (ej: *PROD01 2*)');
         }
@@ -396,6 +415,11 @@ Escribe *cancelar* para reiniciar.`;
     const selectedPresentation = producto.presentacion.get(chosenOption);
 
     if (selectedPresentation && session.pendingOrder) {
+        if (selectedPresentation.existencia <= 0) {
+            await this.sendMessage(userJid, session.sessionId, 'Esta presentación está agotada. Por favor, elige otra.');
+            return;
+        }
+
         const { quantity } = session.pendingOrder;
 
         const existingItem = session.cart.find(item => item.sku === producto.sku && item.presentacion === chosenOption );
@@ -456,16 +480,20 @@ Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *ca
       
       if (producto) {
         if (producto.presentacion && producto.presentacion.size > 0) {
-          const availablePresentations = Array.from(producto.presentacion.entries()).filter(([, p]) => p.disponible);
-          if (availablePresentations.length > 0) {
+          const allPresentations = Array.from(producto.presentacion.entries());
+          if (allPresentations.length > 0) {
             session.state = 'selecting_presentation';
             session.pendingOrder = { sku: producto.sku, quantity: quantity };
             
             session.numberedOptions = {};
-            const presentationList = availablePresentations.map(([name, p], index) => {
+            const presentationList = allPresentations.map(([name, p], index) => {
                 const optionNumber = index + 1;
-                session.numberedOptions[optionNumber] = name; 
-                return `*${optionNumber}*. ${name} - ${p.precioventa.toFixed(2)}`;
+                session.numberedOptions[optionNumber] = name;
+                if (p.existencia > 0) {
+                    return `*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}`;
+                } else {
+                    return `~*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}~ (Agotado)`;
+                }
             }).join('\n');
 
             await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" tiene varias presentaciones. Por favor, elige una:\n${presentationList}`);
@@ -523,12 +551,12 @@ O escribe *cancelar* para reiniciar.`;
       const subtotal = item.quantity * item.precioVenta;
       total += subtotal;
       const displayName = item.presentacion ? `${item.nombreCorto} (${item.presentacion})` : item.nombreCorto;
-      return `${item.quantity} x ${displayName} (*${item.sku}*) - ${subtotal.toFixed(2)}`;
+      return `${item.quantity} x ${displayName} (*${item.sku}*) - ${this.formatCurrency(subtotal)}`;
     });
     const cartContent = `🛒 *Tu Carrito:*
 ${cartItems.join('\n')}
 
-*Total: ${total.toFixed(2)}*`;
+*Total: ${this.formatCurrency(total)}*`;
     await this.sendMessage(userJid, session.sessionId, cartContent);
 
     session.numberedOptions['rc'] = 'categorias';
@@ -552,7 +580,11 @@ Escribe *cancelar* para reiniciar.`;
       return;
     }
     const cliente = await this.clientesService.findOrCreateByWhatsApp(userJid);
-    const items = session.cart.map(item => ({ sku: item.sku, cantidad: item.quantity }));
+    const items = session.cart.map(item => ({
+      sku: item.sku,
+      cantidad: item.quantity,
+      presentacion: item.presentacion,
+    }));
     const total = session.cart.reduce((sum, item) => sum + (item.quantity * item.precioVenta), 0);
     const pedidoDto: CreatePedidoDto = {
       clienteId: cliente._id.toString(),
@@ -564,7 +596,7 @@ Escribe *cancelar* para reiniciar.`;
       await this.pedidosService.create(pedidoDto);
 
       for (const item of pedidoDto.items) {
-        await this.empresasService.decreaseStock(session.company!.id, item.sku, item.cantidad);
+        await this.empresasService.decreaseStock(session.company!.id, item.sku, item.cantidad, item.presentacion);
       }
 
       await this.sendMessage(userJid, session.sessionId, empresa.saludoDespedida || '¡Gracias por tu compra! Hemos recibido tu pedido y lo estamos procesando.');

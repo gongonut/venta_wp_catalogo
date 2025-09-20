@@ -85,6 +85,18 @@ export class EmpresasService {
       fotos: imagePaths,
     };
 
+    if (newProducto.presentacion) {
+      const presentacionMap = new Map();
+      for (const [name, pres] of Object.entries(newProducto.presentacion)) {
+        const newPres = {
+          precioventa: (pres as any).precioventa,
+          existencia: (pres as any).existencia ?? 0,
+        };
+        presentacionMap.set(name, newPres);
+      }
+      newProducto.presentacion = presentacionMap;
+    }
+
     // Validar si el SKU ya existe
     const skuExists = empresa.productos.some(p => p.sku === newProducto.sku);
     if (skuExists) {
@@ -122,6 +134,17 @@ export class EmpresasService {
       const productDto = plainToInstance(ProductoImportDto, item);
       const errors = await validate(productDto);
 
+      if (item.presentacion) {
+        try {
+          JSON.parse(item.presentacion);
+        } catch (e) {
+          errors.push({
+            property: 'presentacion',
+            constraints: { json: 'La columna presentacion no es un JSON válido.' },
+          } as any);
+        }
+      }
+
       if (errors.length > 0) {
         validationErrors.push({ sku: item.sku || 'SKU no definido', errors: errors.map(e => Object.values(e.constraints)).flat() });
       } else {
@@ -142,9 +165,26 @@ export class EmpresasService {
     let createdCount = 0;
 
     for (const productDto of validProducts) {
-      const { foto1, foto2, foto3, foto4, foto5, ...productData } = productDto;
+      const { foto1, foto2, foto3, foto4, foto5, presentacion, ...productData } = productDto;
       const fotos = [foto1, foto2, foto3, foto4, foto5].filter(Boolean);
-      const productWithFotos = { ...productData, fotos };
+      const productWithFotos: Partial<Producto> = { ...productData, fotos };
+
+      if (presentacion) {
+        try {
+          const presentacionObj = JSON.parse(presentacion);
+          const presentacionMap = new Map();
+          for (const [name, pres] of Object.entries(presentacionObj)) {
+            const newPres = {
+              precioventa: (pres as any).precioventa,
+              existencia: (pres as any).existencia ?? 0,
+            };
+            presentacionMap.set(name, newPres);
+          }
+          productWithFotos.presentacion = presentacionMap;
+        } catch (e) {
+          // This should not happen as we validated it before
+        }
+      }
 
       if (existingSkus.has(productDto.sku)) {
         // Actualizar producto existente
@@ -174,10 +214,7 @@ export class EmpresasService {
 
   async findProductCategories(empresaId: string): Promise<string[]> {
     const empresa = await this.findOne(empresaId);
-    const categories = empresa.productos
-      .map(p => p.categoria)
-      .filter((c, index, self) => c && self.indexOf(c) === index); // Filtra nulos/vacíos y obtiene únicos
-    return categories;
+    return empresa.categorias || [];
   }
 
   async findProductsByCategory(empresaId: string, categoria: string): Promise<Producto[]> {
@@ -205,6 +242,18 @@ export class EmpresasService {
     // Evitar que se actualice el sku si se pasa accidentalmente
     const { sku: newSku, ...updateData } = updateDto;
     
+    if (updateData.presentacion) {
+      const presentacionMap = new Map();
+      for (const [name, pres] of Object.entries(updateData.presentacion)) {
+        const newPres = {
+          precioventa: (pres as any).precioventa,
+          existencia: (pres as any).existencia ?? 0,
+        };
+        presentacionMap.set(name, newPres);
+      }
+      updateData.presentacion = presentacionMap;
+    }
+
     const product = empresa.productos[productIndex];
     Object.assign(product, updateData);
     
@@ -225,7 +274,7 @@ export class EmpresasService {
     return empresa.save();
   }
 
-  async decreaseStock(empresaId: string, sku: string, quantity: number): Promise<void> {
+  async decreaseStock(empresaId: string, sku: string, quantity: number, presentacionName?: string): Promise<void> {
     const empresa = await this.findOne(empresaId);
     const productIndex = empresa.productos.findIndex(p => p.sku === sku);
 
@@ -234,12 +283,27 @@ export class EmpresasService {
     }
 
     const product = empresa.productos[productIndex];
-    
-    if (product.existencia < quantity) {
-        console.warn(`Stock issue: Product ${sku} has stock ${product.existencia}, but order is for ${quantity}. Setting stock to 0.`);
-        product.existencia = 0;
+
+    if (presentacionName) {
+      const presentacion = product.presentacion?.get(presentacionName);
+      if (presentacion) {
+        if (presentacion.existencia < quantity) {
+          console.warn(`Stock issue: Presentation "${presentacionName}" for product ${sku} has stock ${presentacion.existencia}, but order is for ${quantity}. Setting stock to 0.`);
+          presentacion.existencia = 0;
+        } else {
+          presentacion.existencia -= quantity;
+        }
+      } else {
+        console.error(`Presentation "${presentacionName}" not found for product ${sku} during stock decrease.`);
+        return; 
+      }
     } else {
-        product.existencia -= quantity;
+      if (product.existencia < quantity) {
+          console.warn(`Stock issue: Product ${sku} has stock ${product.existencia}, but order is for ${quantity}. Setting stock to 0.`);
+          product.existencia = 0;
+      } else {
+          product.existencia -= quantity;
+      }
     }
     
     empresa.markModified('productos');
