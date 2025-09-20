@@ -415,12 +415,12 @@ Escribe *cancelar* para reiniciar.`;
     const selectedPresentation = producto.presentacion.get(chosenOption);
 
     if (selectedPresentation && session.pendingOrder) {
-        if (selectedPresentation.existencia <= 0) {
-            await this.sendMessage(userJid, session.sessionId, 'Esta presentación está agotada. Por favor, elige otra.');
+        const { quantity } = session.pendingOrder;
+
+        if (selectedPresentation.existencia < quantity) {
+            await this.sendMessage(userJid, session.sessionId, `No hay suficiente stock para la presentación "${chosenOption}". Stock actual: ${selectedPresentation.existencia}. Por favor, elige otra presentación o una cantidad menor.`);
             return;
         }
-
-        const { quantity } = session.pendingOrder;
 
         const existingItem = session.cart.find(item => item.sku === producto.sku && item.presentacion === chosenOption );
 
@@ -445,13 +445,7 @@ Escribe *cancelar* para reiniciar.`;
         session.numberedOptions['rc'] = 'categorias';
         session.numberedOptions['vc'] = 'ver carrito';
         session.numberedOptions['fp'] = 'pedido';
-        const optionsMessage = `Opciones:
-*DE*. Ver Detalle (ej: DE 1)
-*RC*. Volver a categorías (o escribe *regresar*)
-*VC*. Ver carrito
-*FP*. Finalizar pedido
-
-Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
+        const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nPara agregar otro producto, usa el formato *SKU/Número [Presentación] Cantidad*. O escribe *cancelar* para reiniciar.`;
         await this.sendMessage(userJid, session.sessionId, optionsMessage);
 
     } else {
@@ -462,83 +456,118 @@ Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *ca
   }
 
   private async handleOrdering(userJid: string, session: UserSessionDocument, messageText: string) {
-    const orderRegex = /^(\S+)\s+(\d+)$/;
-    const match = messageText.match(orderRegex);
-
-    if (match) {
-      let [, itemIdentifier, quantityStr] = match;
-      const quantity = parseInt(quantityStr, 10);
-      let sku: string | undefined;
-
-      if (session.numberedOptions && session.numberedOptions[itemIdentifier]) {
-        sku = session.numberedOptions[itemIdentifier];
-      } else {
-        sku = itemIdentifier.toUpperCase();
-      }
-
-      const producto = await this.empresasService.findProductBySku(session.company!.id, sku);
-      
-      if (producto) {
-        if (producto.presentacion && producto.presentacion.size > 0) {
-          const allPresentations = Array.from(producto.presentacion.entries());
-          if (allPresentations.length > 0) {
-            session.state = 'selecting_presentation';
-            session.pendingOrder = { sku: producto.sku, quantity: quantity };
-            
-            session.numberedOptions = {};
-            const presentationList = allPresentations.map(([name, p], index) => {
-                const optionNumber = index + 1;
-                session.numberedOptions[optionNumber] = name;
-                if (p.existencia > 0) {
-                    return `*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}`;
-                } else {
-                    return `~*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}~ (Agotado)`;
-                }
-            }).join('\n');
-
-            await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" tiene varias presentaciones. Por favor, elige una:\n${presentationList}`);
-            await this.sendMessage(userJid, session.sessionId, 'Escribe el número de la presentación que deseas.');
-          } else {
-            await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" no tiene presentaciones disponibles en este momento.`);
-          }
-        } else {
-          const existingItem = session.cart.find(item => item.sku === producto.sku && !item.presentacion);
-          if (existingItem) {
-            existingItem.quantity = quantity;
-          } else {
-            session.cart.push({ sku: producto.sku, quantity, precioVenta: producto.precioVenta, nombreCorto: producto.nombreCorto });
-          }
-          await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto}.`);
-          
-          session.numberedOptions['rc'] = 'categorias';
-          session.numberedOptions['vc'] = 'ver carrito';
-          session.numberedOptions['fp'] = 'pedido';
-          const optionsMessage = `Opciones:
-*DE*. Ver Detalle (ej: DE 1)
-*RC*. Volver a categorías (o escribe *regresar*)
-*VC*. Ver carrito
-*FP*. Finalizar pedido
-
-Para agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
-          await this.sendMessage(userJid, session.sessionId, optionsMessage);
-        }
-      } else {
-        await this.sendMessage(userJid, session.sessionId, `❌ No encontramos el producto con código "${itemIdentifier.toUpperCase()}". Por favor, verifica el código.`);
-      }
-    } else {
-      session.numberedOptions['rc'] = 'categorias';
-      session.numberedOptions['vc'] = 'ver carrito';
-      session.numberedOptions['fp'] = 'pedido';
-      await this.sendMessage(userJid, session.sessionId, "No entendí tu mensaje. Para ordenar, usa el formato *SKU/Número Cantidad*.");
-      const optionsMessage = `Opciones:
-*DE*. Ver Detalle (ej: DE 1)
-*RC*. Volver a categorías (o escribe *regresar*)
-*VC*. Ver carrito
-*FP*. Finalizar pedido
-
-O escribe *cancelar* para reiniciar.`;
-      await this.sendMessage(userJid, session.sessionId, optionsMessage);
+    const parts = messageText.split(/\s+/);
+    if (parts.length < 2) {
+      await this.sendDefaultHelpMessage(userJid, session);
+      return;
     }
+
+    const itemIdentifier = parts[0];
+    const quantityStr = parts[parts.length - 1];
+    const quantity = parseInt(quantityStr, 10);
+
+    if (isNaN(quantity) || quantity <= 0) {
+      await this.sendDefaultHelpMessage(userJid, session);
+      return;
+    }
+
+    const presentationName = parts.length > 2 ? parts.slice(1, -1).join(' ') : undefined;
+
+    let sku: string | undefined;
+    if (session.numberedOptions && session.numberedOptions[itemIdentifier]) {
+      sku = session.numberedOptions[itemIdentifier];
+    } else {
+      sku = itemIdentifier.toUpperCase();
+    }
+
+    const producto = await this.empresasService.findProductBySku(session.company!.id, sku);
+
+    if (!producto) {
+      await this.sendMessage(userJid, session.sessionId, `❌ No encontramos el producto con código "${sku}". Por favor, verifica el código.`);
+      return;
+    }
+
+    const hasPresentations = producto.presentacion && producto.presentacion.size > 0;
+
+    if (presentationName) {
+      if (!hasPresentations) {
+        await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" no tiene presentaciones. Intenta con: *${sku} ${quantity}*`);
+        return;
+      }
+
+      const presentationKeys = Array.from(producto.presentacion.keys());
+      const foundPresentationKey = presentationKeys.find(p => p.toLowerCase() === presentationName.toLowerCase());
+
+      if (foundPresentationKey) {
+        const selectedPresentation = producto.presentacion.get(foundPresentationKey)!;
+        if (selectedPresentation.existencia < quantity) {
+          await this.sendMessage(userJid, session.sessionId, `No hay suficiente stock para la presentación "${foundPresentationKey}". Stock actual: ${selectedPresentation.existencia}.`);
+          return;
+        }
+
+        const existingItem = session.cart.find(item => item.sku === producto.sku && item.presentacion === foundPresentationKey);
+        if (existingItem) {
+          existingItem.quantity = quantity;
+        } else {
+          session.cart.push({
+            sku: producto.sku,
+            quantity,
+            precioVenta: selectedPresentation.precioventa,
+            nombreCorto: producto.nombreCorto,
+            presentacion: foundPresentationKey,
+          });
+        }
+        await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto} (${foundPresentationKey}).`);
+      } else {
+        await this.sendMessage(userJid, session.sessionId, `Presentación "${presentationName}" no válida para "${producto.nombreCorto}". Las presentaciones disponibles son: ${presentationKeys.join(', ')}`);
+        return;
+      }
+    } else { // No presentation name provided
+      if (hasPresentations) {
+        session.state = 'selecting_presentation';
+        session.pendingOrder = { sku: producto.sku, quantity: quantity };
+        session.numberedOptions = {};
+        
+        const presentationList = Array.from(producto.presentacion.entries()).map(([name, p], index) => {
+          const optionNumber = index + 1;
+          session.numberedOptions[optionNumber] = name;
+          return p.existencia > 0
+            ? `*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}`
+            : `~*${optionNumber}*. ${name} - ${this.formatCurrency(p.precioventa)}~ (Agotado)`;
+        }).join('\n');
+
+        await this.sendMessage(userJid, session.sessionId, `El producto "${producto.nombreCorto}" tiene varias presentaciones. Por favor, elige una:\n${presentationList}`);
+        await this.sendMessage(userJid, session.sessionId, 'Escribe el número de la presentación que deseas.');
+        return;
+      } else {
+        if (producto.existencia < quantity) {
+          await this.sendMessage(userJid, session.sessionId, `No hay suficiente stock para "${producto.nombreCorto}". Stock actual: ${producto.existencia}.`);
+          return;
+        }
+        const existingItem = session.cart.find(item => item.sku === producto.sku && !item.presentacion);
+        if (existingItem) {
+          existingItem.quantity = quantity;
+        } else {
+          session.cart.push({ sku: producto.sku, quantity, precioVenta: producto.precioVenta, nombreCorto: producto.nombreCorto });
+        }
+        await this.sendMessage(userJid, session.sessionId, `✅ Añadido: ${quantity} x ${producto.nombreCorto}.`);
+      }
+    }
+
+    session.numberedOptions['rc'] = 'categorias';
+    session.numberedOptions['vc'] = 'ver carrito';
+    session.numberedOptions['fp'] = 'pedido';
+    const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nPara agregar otro producto, usa el formato *SKU/Número Cantidad*. O escribe *cancelar* para reiniciar.`;
+    await this.sendMessage(userJid, session.sessionId, optionsMessage);
+  }
+
+  private async sendDefaultHelpMessage(userJid: string, session: UserSessionDocument) {
+    session.numberedOptions['rc'] = 'categorias';
+    session.numberedOptions['vc'] = 'ver carrito';
+    session.numberedOptions['fp'] = 'pedido';
+    await this.sendMessage(userJid, session.sessionId, "No entendí tu mensaje. Para ordenar, usa el formato *SKU/Número [Presentación] Cantidad*.");
+    const optionsMessage = `Opciones:\n*DE*. Ver Detalle (ej: DE 1)\n*RC*. Volver a categorías (o escribe *regresar*)\n*VC*. Ver carrito\n*FP*. Finalizar pedido\n\nO escribe *cancelar* para reiniciar.`;
+    await this.sendMessage(userJid, session.sessionId, optionsMessage);
   }
 
   private async handleShowCart(userJid: string, session: UserSessionDocument) {
