@@ -1,4 +1,7 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsMongoId } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEmail, IsUrl, IsEnum, IsNumber, IsBoolean } from 'class-validator';
+import { EmpresaTipo } from '../enums/empresa-tipo.enum';
+import { PaisCodigo } from '../enums/pais-codigo.enum';
+import { TipoWebPg } from '../enums/tipo-web-pg.enum';
 
 export class CreateEmpresaDto {
   @IsString()
@@ -8,6 +11,22 @@ export class CreateEmpresaDto {
   @IsString()
   @IsNotEmpty()
   nombre: string;
+
+  @IsUrl()
+  @IsOptional()
+  logo?: string;
+
+  @IsString()
+  @IsOptional()
+  leitmotiv?: string;
+
+  @IsEnum(EmpresaTipo)
+  @IsOptional()
+  empresaTipo?: EmpresaTipo;
+
+  @IsEnum(PaisCodigo)
+  @IsNotEmpty()
+  codigoPais: PaisCodigo;
 
   @IsString()
   @IsOptional()
@@ -31,6 +50,18 @@ export class CreateEmpresaDto {
     type: string;
     coordinates: number[];
   };
+
+  @IsNumber()
+  @IsOptional()
+  areaInfluencia?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  opcionIA?: boolean;
+
+  @IsEnum(TipoWebPg)
+  @IsOptional()
+  tipoWebPg?: TipoWebPg;
 
   @IsString()
   @IsOptional()

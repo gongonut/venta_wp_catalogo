@@ -1,0 +1,32 @@
+export enum ConversationState {
+  SELECTING_COMPANY = 'selecting_company',
+  SELECTING_CATEGORY = 'selecting_category',
+  BROWSING_PRODUCTS = 'browsing_products',
+  SELECTING_PRESENTATION = 'selecting_presentation',
+  CHECKING_OUT = 'checking_out',
+  CONFIRMING_ORDER = 'confirming_order',
+  ORDER_CONFIRMED = 'order_confirmed',
+  WAITING_FOR_NAME = 'waiting_for_name',
+  WAITING_FOR_LOCATION = 'waiting_for_location',
+  LOCATION_CONFIRMED = 'location_confirmed',
+  AWAITING_PRODUCT_ACTION = 'awaiting_product_action',
+  AWAITING_QUANTITY_FOR_PRODUCT = 'awaiting_quantity_for_product',
+}
+
+export const COMMANDS = {
+  CANCEL: { mnemonic: 'cl', name: 'Cancelar' },
+  GO_BACK: { mnemonic: 'rg', name: 'Regresar' },
+  VIEW_CART: { mnemonic: 'vc', name: 'Ver carrito' },
+  CREATE_ORDER: { mnemonic: 'pd', name: 'Crear pedido' },
+  FINISH: { mnemonic: 'fn', name: 'Terminar' },
+  END: { mnemonic: 'fi', name: 'Finalizar' },
+  YES: { mnemonic: 'si', name: 'Sí' },
+  NO: { mnemonic: 'no', name: 'No' },
+  CATEGORIES: { mnemonic: 'ct', name: 'Categorías' },
+  RETURN_TO_COMPANIES: { mnemonic: 're', name: 'Regresar a empresas' },
+  RETURN_TO_CATEGORIES: { mnemonic: 'rc', name: 'Volver a categorías' },
+  FINALIZE_ORDER: { mnemonic: 'fp', name: 'Finalizar pedido' },
+  DETAIL: { mnemonic: 'de', name: 'Ver Detalle' },
+  ADD_TO_CART: { mnemonic: 'ac', name: 'Agregar al carrito' },
+  REPEAT_MENU: { mnemonic: 'rm', name: 'Repetir menú' },
+};

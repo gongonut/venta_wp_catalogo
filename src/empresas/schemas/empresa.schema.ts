@@ -1,6 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { Producto, ProductoSchema } from './producto.schema';
+import { EmpresaTipo } from '../enums/empresa-tipo.enum';
+import { PaisCodigo } from '../enums/pais-codigo.enum';
+import { TipoWebPg } from '../enums/tipo-web-pg.enum';
 
 export type EmpresaDocument = Empresa & Document;
 
@@ -11,6 +14,18 @@ export class Empresa {
 
   @Prop({ required: true, unique: true })
   nombre: string;
+
+  @Prop()
+  logo: string;
+
+  @Prop()
+  leitmotiv: string;
+
+  @Prop({ type: String, enum: Object.values(EmpresaTipo) })
+  empresaTipo: EmpresaTipo;
+
+  @Prop({ required: true, type: String, enum: Object.values(PaisCodigo) })
+  codigoPais: PaisCodigo;
 
   @Prop()
   telefono: string;
@@ -29,6 +44,15 @@ export class Empresa {
     type: string;
     coordinates: number[];
   };
+
+  @Prop({ type: Number })
+  areaInfluencia: number;
+
+  @Prop({ type: Boolean, default: false })
+  opcionIA: boolean;
+
+  @Prop({ required: true, type: String, enum: Object.values(TipoWebPg), default: TipoWebPg.CLARO })
+  tipoWebPg: TipoWebPg;
 
   @Prop()
   saludoBienvenida: string;
