@@ -11,6 +11,7 @@ export enum ConversationState {
   LOCATION_CONFIRMED = 'location_confirmed',
   AWAITING_PRODUCT_ACTION = 'awaiting_product_action',
   AWAITING_QUANTITY_FOR_PRODUCT = 'awaiting_quantity_for_product',
+  AWAITING_CUSTOMER_DATA = 'awaiting_customer_data',
 }
 
 export const COMMANDS = {

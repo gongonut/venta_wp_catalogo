@@ -105,6 +105,9 @@ export class ConversationService implements OnModuleInit {
       case ConversationState.AWAITING_QUANTITY_FOR_PRODUCT:
         await this.handleAwaitingQuantityForProduct(userJid, session, messageText);
         break;
+      case ConversationState.AWAITING_CUSTOMER_DATA:
+        await this.handleAwaitingCustomerData(userJid, session, messageText);
+        break;
       default:
         this.logger.warn(`Unhandled state: ${session.state}`);
         await this.resetSession(userJid, session, true, 'Estado no reconocido, reiniciando sesión.');
@@ -531,9 +534,71 @@ export class ConversationService implements OnModuleInit {
 
   private async handleCreateOrder(userJid: string, session: UserSessionDocument) {
     if (session.cart.length === 0) {
-        await this.sendMessage(userJid, session.sessionId, 'Tu carrito está vacío.');
+      await this.sendMessage(userJid, session.sessionId, 'Tu carrito está vacío.');
+      return;
+    }
+
+    const cliente = await this.clientesService.findOrCreateByWhatsApp(userJid);
+    session.state = ConversationState.AWAITING_CUSTOMER_DATA;
+
+    const nombreActual = cliente.nombre || 'No registrado';
+    const direccionActual = cliente.direccion || 'No registrada';
+    const telefonoActual = cliente.telefono || userJid.replace('@s.whatsapp.net', '');
+
+    const prompt = `Para procesar tu pedido, necesitamos confirmar tus datos de entrega.\n\n` +
+                   `*Datos actuales:*
+` +
+                   `*Nombre:* ${nombreActual}
+` +
+                   `*Dirección:* ${direccionActual}
+` +
+                   `*Teléfono:* ${telefonoActual}
+
+` +
+                   `*Para confirmar o actualizar, por favor envía tu información en un solo mensaje con el siguiente formato:*
+
+` +
+                   `*Nombre:* Tu nombre completo
+` +
+                   `*Dirección:* Tu dirección de entrega
+` +
+                   `*Teléfono:* Tu número de contacto (opcional)`;
+
+    await this.sendMessage(userJid, session.sessionId, prompt);
+  }
+
+  private parseCustomerData(message: string): { nombre?: string; direccion?: string; telefono?: string } {
+    const nombreMatch = message.match(/nombre:\s*([\s\S]*?)(?:\n\*dirección:|\n\*teléfono:|$)/i);
+    const direccionMatch = message.match(/dirección:\s*([\s\S]*?)(?:\n\*nombre:|\n\*teléfono:|$)/i);
+    const telefonoMatch = message.match(/teléfono:\s*([\s\S]*?)(?:\n\*nombre:|\n\*dirección:|$)/i);
+  
+    return {
+      nombre: nombreMatch ? nombreMatch[1].trim() : undefined,
+      direccion: direccionMatch ? direccionMatch[1].trim() : undefined,
+      telefono: telefonoMatch ? telefonoMatch[1].trim() : undefined,
+    };
+  }
+  
+  private async handleAwaitingCustomerData(userJid: string, session: UserSessionDocument, messageText: string) {
+    const data = this.parseCustomerData(messageText);
+
+    if (!data.nombre && !data.direccion) {
+        await this.sendMessage(userJid, session.sessionId, 'No pude entender tus datos. Por favor, envíalos en el formato solicitado.');
         return;
     }
+
+    const cliente = await this.clientesService.findOrCreateByWhatsApp(userJid);
+
+    if (data.nombre) cliente.nombre = data.nombre;
+    if (data.direccion) cliente.direccion = data.direccion;
+    if (data.telefono) cliente.telefono = data.telefono;
+    
+    await cliente.save();
+
+    await this.executeOrderCreation(userJid, session);
+  }
+
+  private async executeOrderCreation(userJid: string, session: UserSessionDocument) {
     const empresa = await this.empresasService.findOne(session.company!.id);
     const cliente = await this.clientesService.findOrCreateByWhatsApp(userJid);
     const total = session.cart.reduce((sum, item) => sum + (item.quantity * item.precioVenta), 0);
@@ -553,24 +618,38 @@ export class ConversationService implements OnModuleInit {
     } catch (error) {
         console.error(`Error al procesar el pedido para ${userJid}:`, error);
         await this.sendMessage(userJid, session.sessionId, '🔴 Hubo un error al procesar tu pedido. Por favor, contacta a soporte.');
+        return;
     }
 
-    // Construct message for the company
-    const customerName = cliente.nombre || 'Cliente'; // Assuming cliente has a 'nombre' field
+    const customerName = cliente.nombre || 'Cliente';
+    const customerAddress = cliente.direccion || 'No especificada';
+    const customerPhone = cliente.telefono || userJid.replace('@s.whatsapp.net', '');
     const customerWhatsappLink = `https://wa.me/${userJid.replace('@s.whatsapp.net', '')}`;
 
-    let companyNotificationMessage = `¡Nuevo Pedido Recibido!\n\n`;
-    companyNotificationMessage += `*Cliente:* ${customerName}\n`;
-    companyNotificationMessage += `*WhatsApp Cliente:* ${userJid.replace('@s.whatsapp.net', '')}\n`;
-    companyNotificationMessage += `*Enlace para chatear:* ${customerWhatsappLink}\n\n`;
-    companyNotificationMessage += `*Detalles del Pedido:*\n`;
+    let companyNotificationMessage = `¡Nuevo Pedido Recibido!
+
+`;
+    companyNotificationMessage += `*Cliente:* ${customerName}
+`;
+    companyNotificationMessage += `*Dirección de Entrega:* ${customerAddress}
+`;
+    companyNotificationMessage += `*Teléfono de Contacto:* ${customerPhone}
+`;
+    companyNotificationMessage += `*WhatsApp Cliente:* ${userJid.replace('@s.whatsapp.net', '')}
+`;
+    companyNotificationMessage += `*Enlace para chatear:* ${customerWhatsappLink}
+
+`;
+    companyNotificationMessage += `*Detalles del Pedido:*
+`;
 
     pedidoDto.items.forEach(item => {
         const cartItem = session.cart.find(cart => cart.sku === item.sku && cart.presentacion === item.presentacion);
         const itemName = cartItem ? cartItem.nombreCorto : item.sku;
         const presentation = item.presentacion ? ` (${item.presentacion})` : '';
         const price = cartItem ? ` (${cartItem.precioVenta.toFixed(2)} c/u)` : '';
-        companyNotificationMessage += `- ${item.cantidad} x ${itemName}${presentation}${price}\n`;
+        companyNotificationMessage += `- ${item.cantidad} x ${itemName}${presentation}${price}
+`;
     });
 
     companyNotificationMessage += `
@@ -579,23 +658,21 @@ export class ConversationService implements OnModuleInit {
     companyNotificationMessage += `
 Por favor, contacta al cliente para coordinar la entrega.`;
 
-    // Send message to company's WhatsApp
-    if (empresa.whatsApp) { // Check if whatsApp number exists for the company
+    if (empresa.whatsApp) {
       try {
         const companyJid = `${empresa.codigoPais}${empresa.whatsApp}@s.whatsapp.net`;
         await this.whatsappService.sendMessage(session.sessionId, companyJid, companyNotificationMessage);
         this.logger.log(`Order notification sent to company ${empresa.nombre} (${companyJid}) for customer ${customerName}.`);
       } catch (error) {
         this.logger.error(`Failed to send order notification to company ${empresa.nombre} at ${empresa.whatsApp}: ${error.message}`);
-        // Optionally, notify an admin or log this failure for manual follow-up
       }
     } else {
         this.logger.warn(`Company ${empresa.nombre} does not have a WhatsApp number configured to receive order notifications.`);
     }
 
-        await this.sendMessage(userJid, session.sessionId, empresa.saludoDespedida || '¡Gracias por tu compra! Tu pedido ha sido procesado.');
-        await this.resetSession(userJid, session, false);
-    }
+    await this.sendMessage(userJid, session.sessionId, empresa.saludoDespedida || '¡Gracias por tu compra! Tu pedido ha sido procesado.');
+    await this.resetSession(userJid, session, false);
+  }
   
   private async handleGoBack(userJid: string, session: UserSessionDocument) {
     switch (session.state) {
