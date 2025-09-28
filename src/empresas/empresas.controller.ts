@@ -49,6 +49,13 @@ export class EmpresasController {
     return this.empresasService.delete(id);
   }
 
+  // --- Ruta Pública para el Catálogo ---
+
+  @Get('public/:codigo')
+  getPublicEmpresaByCodigo(@Param('codigo') codigo: string) {
+    return this.empresasService.findOneByCode(codigo);
+  }
+
   // --- Rutas para Productos anidados ---
 
   @Post(':empresaId/productos')
