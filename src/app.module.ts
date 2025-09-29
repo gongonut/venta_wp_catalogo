@@ -8,6 +8,24 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BotsModule } from './bots/bots.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+import * as fs from 'fs';
+
+const appsDir = join(__dirname, '..', 'apps');
+const appFolders = fs.existsSync(appsDir) ? fs.readdirSync(appsDir, { withFileTypes: true })
+  .filter(dirent => dirent.isDirectory())
+  .map(dirent => dirent.name) : [];
+
+const staticServeModules = appFolders.map(appFolder => {
+  const appName = appFolder;
+  const rootPath = join(appsDir, appName);
+
+  return ServeStaticModule.forRoot({
+    rootPath,
+    serveRoot: `/${appName}`,
+  });
+});
 
 @Module({
   imports: [
@@ -22,6 +40,7 @@ import { ScheduleModule } from '@nestjs/schedule';
       }),
       inject: [ConfigService],
     }),
+    ...staticServeModules,
     WhatsappModule,
     EmpresasModule,
     

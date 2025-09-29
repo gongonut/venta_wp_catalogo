@@ -112,3 +112,23 @@ export function buildPresentationChoicePrompt(productName: string, presentations
 
   return `El producto *${productName}* tiene varias presentaciones. Por favor, elige una y la cantidad (ej: *1 2* o *Grande 2*):\n${presentationList}`;
 }
+
+export function buildChatStartPrompt(companyName: string): string {
+  return (
+    `Has iniciado un chat directo con *${companyName}*.\n\n` +
+    'Escribe tu consulta a continuación y un representante te atenderá a través de este medio. Todos tus mensajes serán reenviados.\n\n' +
+    `Para dejar de chatear y volver al catálogo, envía la palabra *${COMMANDS.STOP_CHATTING.mnemonic}*.`
+  );
+}
+
+export function buildVendorChatMessage(customerName: string, customerPhone: string, message: string): string {
+  const customerWhatsappLink = `https://wa.me/${customerPhone.replace(/[^0-9]/g, '')}`;
+  return (
+    `💬 Nuevo mensaje de cliente:\n` +
+    `*Nombre:* ${customerName}\n` +
+    `*WhatsApp:* ${customerPhone}\n` +
+    `*Enlace directo:* ${customerWhatsappLink}\n\n` +
+    `*Mensaje:*
+${message}`
+  );
+}

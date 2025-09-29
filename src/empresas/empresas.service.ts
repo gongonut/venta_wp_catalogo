@@ -52,6 +52,16 @@ export class EmpresasService {
     return empresa;
   }
 
+  async findByWhatsApp(phoneNumber: string): Promise<EmpresaDocument | null> {
+    const empresas = await this.empresaModel.find().exec();
+    for (const empresa of empresas) {
+      if (`${empresa.codigoPais}${empresa.whatsApp}` === phoneNumber) {
+        return empresa;
+      }
+    }
+    return null;
+  }
+
   async update(id: string, updateEmpresaDto: UpdateEmpresaDto): Promise<EmpresaDocument> {
     const updatedEmpresa = await this.empresaModel.findByIdAndUpdate(id, updateEmpresaDto, { new: true }).exec();
     if (!updatedEmpresa) {

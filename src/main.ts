@@ -9,7 +9,7 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
   // Habilitar CORS para múltiples orígenes en desarrollo
-  const allowedOrigins = ['http://localhost:4202', 'http://localhost:4203'];
+  const allowedOrigins = ['http://localhost:4202', 'http://localhost:4203', 'http://localhost:3000'];
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.indexOf(origin) !== -1) {

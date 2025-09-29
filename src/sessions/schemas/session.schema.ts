@@ -50,13 +50,16 @@ export class UserSession {
   userJid: string;
 
   @Prop({ type: Object })
-  company?: { code: string; id: string };
+  company?: { code: string; id: string; name: string };
 
   @Prop({ type: [CartItemSchema], default: [] })
   cart: CartItem[];
 
   @Prop({ required: true, default: 'selecting_company' })
   state: string;
+
+  @Prop()
+  previousState?: string;
 
   @Prop([String])
   availableCategories?: string[];

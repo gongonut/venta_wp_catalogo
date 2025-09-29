@@ -12,6 +12,7 @@ export enum ConversationState {
   AWAITING_PRODUCT_ACTION = 'awaiting_product_action',
   AWAITING_QUANTITY_FOR_PRODUCT = 'awaiting_quantity_for_product',
   AWAITING_CUSTOMER_DATA = 'awaiting_customer_data',
+  CHATTING = 'chatting',
 }
 
 export const COMMANDS = {
@@ -30,4 +31,6 @@ export const COMMANDS = {
   DETAIL: { mnemonic: 'de', name: 'Ver Detalle' },
   ADD_TO_CART: { mnemonic: 'ac', name: 'Agregar al carrito' },
   REPEAT_MENU: { mnemonic: 'rm', name: 'Repetir menú' },
+  CHAT: { mnemonic: 'ch', name: 'Chatear con la tienda' },
+  STOP_CHATTING: { mnemonic: 'terminar', name: 'Terminar chat' },
 };

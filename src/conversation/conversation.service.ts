@@ -9,6 +9,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { COMMANDS, ConversationState } from './conversation.constants';
 import * as prompts from './conversation.prompts';
+import { WAMessage } from '@whiskeysockets/baileys';
 
 @Injectable()
 export class ConversationService implements OnModuleInit {
@@ -36,11 +37,17 @@ export class ConversationService implements OnModuleInit {
     this.logger.log('ConversationService initialized.');
   }
 
-  public async handleIncomingMessage(message: { from: string; sessionId: string; text: string; }) {
+  public async handleIncomingMessage(message: { from: string; sessionId: string; text: string; originalMessage: any; }) {
     try {
       this.logger.debug(`Processing message from ${message.from} via session ${message.sessionId}: "${message.text}"`);
       const userJid = message.from;
       let messageText = message.text.trim().toLowerCase();
+
+      // Handle vendor replies
+      const vendorReply = await this.handleVendorReply(message);
+      if (vendorReply) {
+        return;
+      }
 
       if (messageText === 'borrar_sesiones_clientes_ahora') {
         const result = await this.sessionsService.clearAllSessions();
@@ -108,6 +115,9 @@ export class ConversationService implements OnModuleInit {
       case ConversationState.AWAITING_CUSTOMER_DATA:
         await this.handleAwaitingCustomerData(userJid, session, messageText);
         break;
+      case ConversationState.CHATTING:
+        await this.handleChatting(userJid, session, messageText, command);
+        break;
       default:
         this.logger.warn(`Unhandled state: ${session.state}`);
         await this.resetSession(userJid, session, true, 'Estado no reconocido, reiniciando sesión.');
@@ -124,7 +134,7 @@ export class ConversationService implements OnModuleInit {
     }
 
     if (empresa) {
-      session.company = { code: empresa.code, id: empresa._id.toString() };
+      session.company = { code: empresa.code, id: empresa._id.toString(), name: empresa.nombre };
       await this.sendMessage(userJid, session.sessionId, empresa.saludoBienvenida || `¡Bienvenido a ${empresa.nombre}!`);
       
       const categories = await this.empresasService.findProductCategories(session.company.id);
@@ -167,6 +177,7 @@ export class ConversationService implements OnModuleInit {
     
     await this.sendMessage(userJid, session.sessionId, prompt);
     const optionsPrompt = prompts.buildOptionsPrompt([
+      { command: 'CHAT' },
       { command: 'RETURN_TO_COMPANIES' },
       { command: 'REPEAT_MENU' },
       { command: 'CANCEL' },
@@ -175,6 +186,10 @@ export class ConversationService implements OnModuleInit {
   }
   
   private async handleCategorySelection(userJid: string, session: UserSessionDocument, messageText: string, command: keyof typeof COMMANDS | undefined) {
+    if (command === 'CHAT') {
+      await this.startChatting(userJid, session);
+      return;
+    }
     if (command === 'FINALIZE_ORDER') {
         await this.handleCreateOrder(userJid, session);
         return;
@@ -195,6 +210,7 @@ export class ConversationService implements OnModuleInit {
         await this.sendMessage(userJid, session.sessionId, prompt);
         
         const optionsPrompt = prompts.buildOptionsPrompt([
+            { command: 'CHAT' },
             { command: 'DETAIL', customDescription: 'Ver Detalle (ej: de SKU)' },
             { command: 'RETURN_TO_CATEGORIES' },
             { command: 'VIEW_CART' },
@@ -217,6 +233,7 @@ export class ConversationService implements OnModuleInit {
     await this.sendMessage(userJid, session.sessionId, prompt);
 
     const optionsPrompt = prompts.buildOptionsPrompt([
+        { command: 'CHAT' },
         { command: 'DETAIL', customDescription: 'Ver Detalle (ej: de SKU)' },
         { command: 'VIEW_CART' },
         { command: 'FINALIZE_ORDER' },
@@ -232,6 +249,9 @@ export class ConversationService implements OnModuleInit {
 
     if (command) {
         switch (command) {
+            case 'CHAT':
+                await this.startChatting(userJid, session);
+                return;
             case 'CREATE_ORDER':
             case 'FINALIZE_ORDER':
                 await this.handleCreateOrder(userJid, session);
@@ -294,6 +314,7 @@ export class ConversationService implements OnModuleInit {
         }
 
         const otherOptions: { command: keyof typeof COMMANDS; customDescription?: string; }[] = [
+            { command: 'CHAT' },
             { command: 'GO_BACK' },
             { command: 'RETURN_TO_CATEGORIES' },
             { command: 'VIEW_CART' },
@@ -324,6 +345,9 @@ export class ConversationService implements OnModuleInit {
     }
 
     switch (action) {
+        case 'CHAT':
+            await this.startChatting(userJid, session);
+            return;
         case 'GO_BACK':
             session.pendingProduct = undefined;
             await this.showCategories(userJid, session); // Or showAllProducts if no categories
@@ -419,13 +443,15 @@ export class ConversationService implements OnModuleInit {
     session.numberedOptions = {};
 
     const optionsPrompt = prompts.buildOptionsPrompt([
+        { command: 'CHAT' },
         { command: 'VIEW_CART' },
         { command: 'FINALIZE_ORDER' },
         { command: 'RETURN_TO_CATEGORIES' },
         { command: 'REPEAT_MENU' },
         { command: 'CANCEL' },
     ]);
-    await this.sendMessage(userJid, session.sessionId, `Puedes seguir agregando productos o elegir una opción:\n${optionsPrompt}`);
+    await this.sendMessage(userJid, session.sessionId, `Puedes seguir agregando productos o elegir una opción:
+${optionsPrompt}`);
   }
   
   private async handleOrdering(userJid: string, session: UserSessionDocument, messageText: string) {
@@ -626,34 +652,23 @@ export class ConversationService implements OnModuleInit {
     const customerPhone = cliente.telefono || userJid.replace('@s.whatsapp.net', '');
     const customerWhatsappLink = `https://wa.me/${userJid.replace('@s.whatsapp.net', '')}`;
 
-    let companyNotificationMessage = `¡Nuevo Pedido Recibido!
-
-`;
-    companyNotificationMessage += `*Cliente:* ${customerName}
-`;
-    companyNotificationMessage += `*Dirección de Entrega:* ${customerAddress}
-`;
-    companyNotificationMessage += `*Teléfono de Contacto:* ${customerPhone}
-`;
-    companyNotificationMessage += `*WhatsApp Cliente:* ${userJid.replace('@s.whatsapp.net', '')}
-`;
-    companyNotificationMessage += `*Enlace para chatear:* ${customerWhatsappLink}
-
-`;
-    companyNotificationMessage += `*Detalles del Pedido:*
-`;
+    let companyNotificationMessage = `¡Nuevo Pedido Recibido!\n\n`;
+    companyNotificationMessage += `*Cliente:* ${customerName}\n` +
+                               `*Dirección de Entrega:* ${customerAddress}\n` +
+                               `*Teléfono de Contacto:* ${customerPhone}\n` +
+                               `*WhatsApp Cliente:* ${userJid.replace('@s.whatsapp.net', '')}\n` +
+                               `*Enlace para chatear:* ${customerWhatsappLink}\n\n` +
+                               `*Detalles del Pedido:*\n`;
 
     pedidoDto.items.forEach(item => {
         const cartItem = session.cart.find(cart => cart.sku === item.sku && cart.presentacion === item.presentacion);
         const itemName = cartItem ? cartItem.nombreCorto : item.sku;
         const presentation = item.presentacion ? ` (${item.presentacion})` : '';
         const price = cartItem ? ` (${cartItem.precioVenta.toFixed(2)} c/u)` : '';
-        companyNotificationMessage += `- ${item.cantidad} x ${itemName}${presentation}${price}
-`;
+        companyNotificationMessage += `- ${item.cantidad} x ${itemName}${presentation}${price}\n`;
     });
 
-    companyNotificationMessage += `
-*Total:* ${total.toFixed(2)}
+    companyNotificationMessage += `\n*Total:* ${total.toFixed(2)}
 `;
     companyNotificationMessage += `
 Por favor, contacta al cliente para coordinar la entrega.`;
@@ -724,6 +739,88 @@ Por favor, contacta al cliente para coordinar la entrega.`;
     }
   }
 
+  private async startChatting(userJid: string, session: UserSessionDocument) {
+    if (!session.company) {
+      await this.sendMessage(userJid, session.sessionId, 'Por favor, primero elige una empresa.');
+      return;
+    }
+    session.previousState = session.state;
+    session.state = ConversationState.CHATTING;
+    const prompt = prompts.buildChatStartPrompt(session.company.name!);
+    await this.sendMessage(userJid, session.sessionId, prompt);
+  }
+
+  private async stopChatting(userJid: string, session: UserSessionDocument) {
+    session.state = session.previousState || ConversationState.SELECTING_CATEGORY;
+    session.previousState = undefined;
+    await this.sendMessage(userJid, session.sessionId, 'Has finalizado el chat.');
+    await this.handleRepeatMenu(userJid, session);
+  }
+
+  private async handleChatting(userJid: string, session: UserSessionDocument, messageText: string, command: keyof typeof COMMANDS | undefined) {
+    if (command === 'STOP_CHATTING') {
+      await this.stopChatting(userJid, session);
+      return;
+    }
+
+    const empresa = await this.empresasService.findOne(session.company!.id);
+    if (!empresa || !empresa.whatsApp) {
+      await this.sendMessage(userJid, session.sessionId, 'Lo sentimos, esta empresa no tiene un chat habilitado.');
+      await this.stopChatting(userJid, session);
+      return;
+    }
+
+    const cliente = await this.clientesService.findOrCreateByWhatsApp(userJid);
+    const customerName = cliente.nombre || 'Cliente sin nombre';
+    const customerPhone = userJid.replace('@s.whatsapp.net', '');
+
+    const vendorMessage = prompts.buildVendorChatMessage(customerName, customerPhone, messageText) + `
+
+[ref:${userJid}]`;
+    const companyJid = `${empresa.codigoPais}${empresa.whatsApp}@s.whatsapp.net`;
+
+    try {
+      await this.whatsappService.sendMessage(session.sessionId, companyJid, vendorMessage);
+      await this.sendMessage(userJid, session.sessionId, 'Tu mensaje ha sido enviado.');
+    } catch (error) {
+      this.logger.error(`Failed to forward message to company ${empresa.nombre}: ${error.message}`);
+      await this.sendMessage(userJid, session.sessionId, 'Lo sentimos, no pudimos enviar tu mensaje. Inténtalo de nuevo más tarde.');
+    }
+  }
+
+  private async handleVendorReply(message: { from: string; sessionId: string; text: string; originalMessage: WAMessage; }): Promise<boolean> {
+    const vendorJid = message.from;
+    const vendorPhoneNumber = vendorJid.split('@')[0];
+    const empresa = await this.empresasService.findByWhatsApp(vendorPhoneNumber);
+
+    if (!empresa) {
+      return false; // Not a reply from a known vendor
+    }
+
+    const quotedInfo = message.originalMessage.message?.extendedTextMessage?.contextInfo;
+    if (!quotedInfo || !quotedInfo.quotedMessage) {
+      return false; // Not a reply
+    }
+
+    const originalQuotedMessage = quotedInfo.quotedMessage.conversation || quotedInfo.quotedMessage.extendedTextMessage?.text || '';
+    const customerJidMatch = originalQuotedMessage.match(/\\\[ref:(\S+@s\\.whatsapp\\.net)\\\]/);
+
+    if (customerJidMatch && customerJidMatch[1]) {
+      const customerJid = customerJidMatch[1];
+      const replyText = message.text;
+      try {
+        await this.whatsappService.sendMessage(message.sessionId, customerJid, `Respuesta de ${empresa.nombre}:\n${replyText}`);
+        this.logger.log(`Relayed reply from vendor ${empresa.nombre} to customer ${customerJid}`);
+        return true; // Message handled
+      } catch (error) {
+        this.logger.error(`Failed to relay vendor reply to ${customerJid}: ${error.message}`);
+        return true; // Still considered handled to prevent further processing
+      }
+    }
+
+    return false;
+  }
+
   private async resetSession(userJid: string, session: UserSessionDocument, sendMessage = true, message?: string) {
     const oldSessionId = session.sessionId;
     session.company = undefined;
@@ -732,6 +829,7 @@ Por favor, contacta al cliente para coordinar la entrega.`;
     session.availableCategories = [];
     session.numberedOptions = {};
     session.pendingProduct = undefined;
+    session.previousState = undefined;
 
     if (this.sessionTimers.has(userJid)) {
         const timers = this.sessionTimers.get(userJid)!;

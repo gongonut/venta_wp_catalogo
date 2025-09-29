@@ -1,0 +1,18 @@
+[
+  {
+    "sku": "PROD-001",
+    "nombreCorto": "Camisa Azul",
+    "nombreLargo": "Camisa de algodón de manga larga color azul",
+    "existencia": 100,
+    "costo": 15.50,
+    "precioVenta": 29.99
+  },
+  {
+    "sku": "PROD-002",
+    "nombreCorto": "Pantalón Negro",
+    "nombreLargo": "Pantalón de mezclilla negro, corte recto",
+    "existencia": 50,
+    "costo": 25.00,
+    "precioVenta": 49.99
+  }
+]
