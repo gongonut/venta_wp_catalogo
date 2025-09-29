@@ -23,7 +23,7 @@ const staticServeModules = appFolders.map(appFolder => {
 
   return ServeStaticModule.forRoot({
     rootPath,
-    serveRoot: `/${appName}`,
+    serveRoot: appName === 'frontend' ? '/' : `/${appName}`,
   });
 });
 
