@@ -8,11 +8,19 @@ async function bootstrap() {
   
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
-  // Habilitar CORS para múltiples orígenes en desarrollo
-  const allowedOrigins = ['http://localhost:4202', 'http://localhost:4203', 'http://localhost:3000'];
+  const allowedOrigins = [
+    'http://localhost:4202',
+    'http://localhost:4203',
+    'http://localhost:3000',
+    'https://ventawpcatalogo.up.railway.app'
+  ];
+
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      // allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -21,6 +29,7 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
+
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
