@@ -10,25 +10,13 @@ import { SessionsModule } from './sessions/sessions.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
-import * as fs from 'fs';
-
-const appsDir = join(__dirname, '..', 'apps');
-const appFolders = fs.existsSync(appsDir) ? fs.readdirSync(appsDir, { withFileTypes: true })
-  .filter(dirent => dirent.isDirectory())
-  .map(dirent => dirent.name) : [];
-
-const staticServeModules = appFolders.map(appFolder => {
-  const appName = appFolder;
-  const rootPath = join(appsDir, appName);
-
-  return ServeStaticModule.forRoot({
-    rootPath,
-    serveRoot: appName === 'frontend' ? '/' : `/${appName}`,
-  });
-});
 
 @Module({
   imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'apps', 'frontend'),
+      serveRoot: '/',
+    }),
     ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -40,10 +28,8 @@ const staticServeModules = appFolders.map(appFolder => {
       }),
       inject: [ConfigService],
     }),
-    ...staticServeModules,
     WhatsappModule,
     EmpresasModule,
-    
     ClientesModule,
     PedidosModule,
     BotsModule,
@@ -53,4 +39,3 @@ const staticServeModules = appFolders.map(appFolder => {
   providers: [],
 })
 export class AppModule {}
-
